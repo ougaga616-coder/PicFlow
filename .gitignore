@@ -1,0 +1,35 @@
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+build/
+out/
+release/
+.vite/
+
+# Local app/user data
+userData/
+local-data/
+data/
+*.local.json
+*local-data*.json
+aigc-flow-library-data.json
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+picflow-current-screenshot.png
+
+# Corrupt backup files
+*.corrupt
+*.corrupt.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
