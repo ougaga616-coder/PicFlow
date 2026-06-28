@@ -16,7 +16,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
-import { ClipboardEvent as ReactClipboardEvent, DragEvent, ReactNode, WheelEvent, useEffect, useMemo, useState } from 'react';
+import { ClipboardEvent as ReactClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, WheelEvent, useEffect, useMemo, useState } from 'react';
 import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage } from './types';
 
 type ViewKey = 'all' | 'pending' | 'favorites' | `collection:${string}`;
@@ -159,6 +159,12 @@ function isImageFile(file: File): boolean {
   return /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name);
 }
 
+function isImageUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  return /\.(png|jpe?g|webp|gif|bmp|avif)(\?.*)?$/i.test(trimmed);
+}
+
 function nextAfterDelete(cases: PicFlowCase[], deletedId: string): string | null {
   const index = cases.findIndex((item) => item.id === deletedId);
   const next = cases[index + 1] ?? cases[index - 1];
@@ -175,7 +181,6 @@ export default function App(): JSX.Element {
   const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
   const [editingCollectionName, setEditingCollectionName] = useState('');
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
-  const [imageUrlDraft, setImageUrlDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -414,13 +419,26 @@ export default function App(): JSX.Element {
     setToast('已添加垫图');
   }
 
-  function addUrlImage(): void {
-    const url = imageUrlDraft.trim();
+  function addUrlImage(urlValue: string): void {
+    const url = urlValue.trim();
     if (!url) return;
     const image: PicFlowImage = { id: newId(), url, name: '图片链接', type: 'reference', addedAt: nowIso() };
     appendWork(createCase({ images: [image], captureMethod: 'url-paste', sourceUrl: url }));
-    setImageUrlDraft('');
-    setToast('已创建未命名作品');
+    setSearch('');
+    setToast('已通过链接添加作品');
+  }
+
+  function handleSmartInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
+    if (event.key !== 'Enter') return;
+    const value = search.trim();
+    if (!value) return;
+    if (!/^https?:\/\//i.test(value)) return;
+    if (!isImageUrl(value)) {
+      setToast('不支持的图片链接');
+      return;
+    }
+    event.preventDefault();
+    addUrlImage(value);
   }
 
   function confirmCase(id: string): void {
@@ -562,27 +580,14 @@ export default function App(): JSX.Element {
               className="h-10 w-full rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] py-0 pl-10 pr-3 text-sm leading-10 text-ink outline-none transition placeholder:text-stone-400 hover:border-[#cbd2ca] focus:border-[#8faf9b] focus:ring-2 focus:ring-[#8faf9b]/20 dark:border-[#4a4a4a] dark:bg-[#343434] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:hover:border-[#5a5a5a] dark:focus:border-[#afc7b6] dark:focus:ring-[#afc7b6]/20"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索作品、Prompt、模型、来源"
+              onKeyDown={handleSmartInputKeyDown}
+              placeholder="搜索作品 / 粘贴图片链接"
             />
           </label>
           <button className="primary-button shrink-0" onClick={() => importImages()} aria-label="导入图片">
             <Upload className="h-4 w-4" />
             导入图片
           </button>
-          <div className="flex h-10 w-[180px] shrink-0 items-center overflow-hidden rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] shadow-[0_1px_1px_rgba(23,32,28,0.03)] transition focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#4a4a4a] dark:bg-[#343434] dark:focus-within:border-[#afc7b6] dark:focus-within:ring-[#afc7b6]/20">
-            <input
-              className="min-w-0 flex-1 bg-transparent px-3 text-sm text-ink outline-none placeholder:text-stone-400 dark:text-neutral-100 dark:placeholder:text-neutral-500"
-              value={imageUrlDraft}
-              onChange={(event) => setImageUrlDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') addUrlImage();
-              }}
-              placeholder="粘贴图片链接"
-            />
-            <button className="icon-button mr-1" onClick={addUrlImage} aria-label="添加链接" title="添加链接">
-              <Link className="h-4 w-4" />
-            </button>
-          </div>
           <button className="icon-button shrink-0" onClick={() => setDarkMode((value) => !value)} aria-label="切换浅色深色模式" title="切换浅色 / 深色模式">
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
@@ -721,13 +726,14 @@ export default function App(): JSX.Element {
           onRemoveGuideImage={removeGuideImage}
           onClearGuideImages={(item) => setConfirmState({ type: 'clear-guides', caseId: item.id, title: displayTitle(item) })}
           onCopyGuideImage={(image) => copyText(image.url || image.localPath || image.name, '垫图')}
+          onCopyMainImage={(image) => copyImage(image)}
           onConfirm={confirmCase}
           onCopy={copyText}
         />
         </div>
       </main>
 
-      {toast && <div className="fixed left-1/2 top-[38%] z-50 -translate-x-1/2 -translate-y-1/2 rounded-[12px] bg-[#17201c]/92 px-4 py-2 text-sm text-white shadow-[0_16px_40px_rgba(23,32,28,0.18)] backdrop-blur dark:bg-[#e1ddd3] dark:text-[#242424]">{toast}</div>}
+      {toast && <div className="toast">{toast}</div>}
 
       {confirmState && <ConfirmDialog state={confirmState} onCancel={() => setConfirmState(null)} onConfirm={deleteConfirmed} />}
     </div>
@@ -750,7 +756,6 @@ function BrandHeader(): JSX.Element {
 function SidebarSectionHeader({ title, onAction }: { title: string; onAction: () => void }): JSX.Element {
   return (
     <div className="sidebar-section-header mb-2">
-      <span className="sidebar-section-spacer" aria-hidden="true" />
       <span className="sidebar-section-title">{title}</span>
       <button className="sidebar-section-add" onClick={onAction} aria-label="新建图集" title="新建图集">
         <Plus className="h-4 w-4" />
@@ -794,8 +799,8 @@ function SidebarRow({
 
 function EmptyState({ dragging, onImport }: { dragging: boolean; onImport: () => void }): JSX.Element {
   return (
-    <div className="flex min-h-[520px] items-center justify-center rounded-[18px] bg-[#edf0eb] p-6 dark:bg-[#2a2a2a]">
-      <div className="w-full max-w-lg rounded-[18px] border border-dashed border-[#cfd6ce] bg-[#f7f8f5]/70 px-8 py-10 text-center shadow-[0_18px_50px_rgba(23,32,28,0.05)] dark:border-[#474747] dark:bg-[#303030]/75">
+    <div className="flex min-h-[520px] items-center justify-center p-6">
+      <div className="w-full max-w-lg px-8 py-10 text-center">
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[16px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#354038] dark:text-[#afc7b6]">
           <ImagePlus className="h-7 w-7" />
         </div>
@@ -930,6 +935,7 @@ function DetailPanel({
   onRemoveGuideImage,
   onClearGuideImages,
   onCopyGuideImage,
+  onCopyMainImage,
   onConfirm,
   onCopy
 }: {
@@ -950,6 +956,7 @@ function DetailPanel({
   onRemoveGuideImage: (caseId: string, imageId: string) => void;
   onClearGuideImages: (item: PicFlowCase) => void;
   onCopyGuideImage: (image: PicFlowImage) => void;
+  onCopyMainImage: (image?: PicFlowImage) => void;
   onConfirm: (id: string) => void;
   onCopy: (value: string | undefined, label: string) => void;
 }): JSX.Element {
@@ -979,10 +986,18 @@ function DetailPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
-        <section className="rounded-[16px] bg-[#eef1ec] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[#292929]">
+        <section className="rounded-[16px] bg-[#eef1ec] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[#292929]">
+          <div className="mb-3 text-xs font-semibold text-stone-600 dark:text-neutral-400">视觉素材</div>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">主图</span>
-            <span className="text-[11px] text-stone-400 dark:text-neutral-500">作品封面 / 最终图</span>
+            <div className="flex items-center gap-1">
+              <button className="icon-button" onClick={() => onCopyMainImage(cover)} aria-label="复制主图" title="复制主图">
+                <Copy className="h-4 w-4" />
+              </button>
+              <button className="icon-button" onClick={onAddMainImages} aria-label="添加或替换主图" title="添加或替换主图">
+                <ImagePlus className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           <div
             className="group relative h-[330px] overflow-hidden rounded-[14px] bg-[#e3e8e2] dark:bg-[#383838]"
@@ -999,57 +1014,54 @@ function DetailPanel({
                 <ImagePlus className="h-10 w-10" />
               </div>
             )}
-            <button className="icon-button absolute right-2 top-2 opacity-0 shadow-sm group-hover:opacity-100" onClick={onAddMainImages} aria-label="添加或替换主图" title="添加或替换主图">
-              <ImagePlus className="h-4 w-4" />
-            </button>
           </div>
-        </section>
 
-        <section
-          className="rounded-[16px] border border-dashed border-[#cfd6ce]/80 bg-[#f2f3f0] p-2.5 outline-none transition focus:border-[#8faf9b] dark:border-[#484848] dark:bg-[#292929] dark:focus:border-[#afc7b6]"
-          data-guide-dropzone="true"
-          tabIndex={0}
-          onDragOver={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onDrop={(event) => onGuideDrop(event, item.id)}
-          onPaste={(event) => onGuidePaste(event, item.id)}
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">垫图</span>
-            <div className="flex items-center gap-1">
-              {(item.referenceImages ?? []).length > 0 && (
-                <button className="h-7 rounded-lg px-2 text-xs text-stone-400 transition hover:bg-[#e9ece8] hover:text-[#9d5147] dark:text-neutral-500 dark:hover:bg-[#383838] dark:hover:text-[#d9a19a]" onClick={() => onClearGuideImages(item)}>
-                  清空
+          <div
+            className="mt-4 border-t border-[#dbe1da]/80 pt-3 outline-none dark:border-[#3f3f3f]"
+            data-guide-dropzone="true"
+            tabIndex={0}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onDrop={(event) => onGuideDrop(event, item.id)}
+            onPaste={(event) => onGuidePaste(event, item.id)}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">垫图</span>
+              <div className="flex items-center gap-1">
+                {(item.referenceImages ?? []).length > 0 && (
+                  <button className="h-7 rounded-lg px-2 text-xs text-stone-400 transition hover:bg-[#e9ece8] hover:text-[#9d5147] dark:text-neutral-500 dark:hover:bg-[#383838] dark:hover:text-[#d9a19a]" onClick={() => onClearGuideImages(item)}>
+                    清空
+                  </button>
+                )}
+                <button className="icon-button" onClick={onAddGuideImages} aria-label="添加垫图" title="添加垫图">
+                  <ImagePlus className="h-4 w-4" />
                 </button>
-              )}
-              <button className="icon-button" onClick={onAddGuideImages} aria-label="添加垫图" title="添加垫图">
-                <ImagePlus className="h-4 w-4" />
-              </button>
+              </div>
             </div>
-          </div>
-          {(item.referenceImages ?? []).length === 0 ? (
-            <div className="flex h-16 items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/55 px-3 text-center text-xs text-stone-400 dark:border-[#494949] dark:bg-[#333]/70 dark:text-neutral-500">
-              拖拽图片到这里，或 Ctrl + V 粘贴为垫图
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {(item.referenceImages ?? []).map((image) => (
-                <div key={image.id} className="group relative aspect-square overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
-                  <img className="h-full w-full object-cover" src={imageSrc(image)} alt={image.name ?? '垫图'} />
-                  <div className="absolute inset-x-1 bottom-1 flex justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                    <button className="icon-button h-7 w-7" onClick={() => onCopyGuideImage(image)} aria-label="复制垫图" title="复制垫图">
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <button className="icon-button h-7 w-7 text-[#a24f43] dark:text-[#d9a19a]" onClick={() => onRemoveGuideImage(item.id, image.id)} aria-label="删除垫图" title="删除垫图">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+            {(item.referenceImages ?? []).length === 0 ? (
+              <div className="flex h-14 items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500">
+                拖拽图片到这里，或 Ctrl + V 粘贴为垫图
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                {(item.referenceImages ?? []).map((image) => (
+                  <div key={image.id} className="group relative aspect-square overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
+                    <img className="h-full w-full object-cover" src={imageSrc(image)} alt={image.name ?? '垫图'} />
+                    <div className="absolute inset-x-1 bottom-1 flex justify-end gap-1 opacity-0 transition group-hover:opacity-100">
+                      <button className="icon-button h-7 w-7" onClick={() => onCopyGuideImage(image)} aria-label="复制垫图" title="复制垫图">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                      <button className="icon-button h-7 w-7 text-[#a24f43] dark:text-[#d9a19a]" onClick={() => onRemoveGuideImage(item.id, image.id)} aria-label="删除垫图" title="删除垫图">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="rounded-[16px] bg-[#fbfbfa] p-3 dark:bg-[#313131]">

@@ -71,7 +71,7 @@ button:disabled {
 }
 
 .primary-button {
-  @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#171f1b] px-3 text-sm font-medium text-white shadow-[0_8px_18px_rgba(23,31,27,0.12)] transition hover:bg-[#26312b] active:scale-[0.99] disabled:opacity-45 dark:bg-[#d8d3c8] dark:text-[#242424] dark:hover:bg-[#e4dfd4];
+  @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#5f7f69] px-3 text-sm font-medium text-white shadow-[0_8px_18px_rgba(95,127,105,0.18)] transition hover:bg-[#4f6f59] active:scale-[0.99] disabled:opacity-45 dark:bg-[#afc7b6] dark:text-[#232824] dark:hover:bg-[#c1d3c7];
 }
 
 .danger-button {
@@ -80,6 +80,29 @@ button:disabled {
 
 .icon-button {
   @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-stone-500 transition hover:border-[#d7ddd6] hover:bg-[#f1f3f0] hover:text-ink active:scale-[0.98] dark:text-neutral-400 dark:hover:border-[#555] dark:hover:bg-[#444] dark:hover:text-neutral-100;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  top: 38%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(40, 58, 48, 0.94);
+  padding: 9px 16px;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow: 0 12px 32px rgba(20, 32, 24, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+.dark .toast {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(39, 52, 43, 0.96);
+  color: #f7faf6;
 }
 
 .brand-header {
@@ -159,16 +182,11 @@ button:disabled {
 
 .sidebar-section-header {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   height: 32px;
-  padding: 0 12px;
+  padding: 0 16px;
   column-gap: 8px;
-}
-
-.sidebar-section-spacer {
-  width: 24px;
-  height: 24px;
 }
 
 .sidebar-section-title {
@@ -228,7 +246,7 @@ button:disabled {
   align-items: center;
   width: 100%;
   height: 36px;
-  padding: 0 12px;
+  padding: 0 16px;
   column-gap: 8px;
   border: 0;
   border-radius: 10px;
@@ -300,7 +318,7 @@ button:disabled {
 .sidebar-row-action {
   position: absolute;
   top: 50%;
-  right: 12px;
+  right: 16px;
   display: flex;
   width: 28px;
   height: 28px;
