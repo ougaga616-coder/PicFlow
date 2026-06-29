@@ -737,6 +737,12 @@ select,
   transition: opacity 150ms ease, color 150ms ease;
 }
 
+.sidebar-row-icon,
+.sidebar-row-label,
+.sidebar-row-count {
+  pointer-events: none;
+}
+
 .group:hover > .sidebar-row .sidebar-row-count {
   opacity: 0;
 }

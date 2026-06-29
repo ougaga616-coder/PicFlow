@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { ClipboardEvent as ReactClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage, PicFlowLibraryApi, PicFlowLibraryState } from './types';
+import { formatModelTagsForCopy, formatWorkSummaryForCopy } from './utils/workCopy';
+import { matchesWorkSearch } from './utils/workSearch';
 
 type ViewKey = 'all' | 'pending' | 'favorites' | `collection:${string}`;
 type ConfirmState =
@@ -174,24 +176,9 @@ function formatTime(value?: string): string {
   }).format(new Date(value));
 }
 
-function matchesSearch(item: PicFlowCase, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return [
-    item.title,
-    item.prompt,
-    item.sourceUrl,
-    ...(item.modelTags ?? [])
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-    .includes(q);
-}
-
 function viewTitle(view: ViewKey, collections: PicFlowCollection[]): string {
   if (view === 'all') return '全部作品';
-  if (view === 'pending') return '待确认';
+  if (view === 'pending') return '\u5f85\u6574\u7406';
   if (view === 'favorites') return '我的收藏';
   const collection = collections.find((item) => item.id === view.replace('collection:', ''));
   return collection?.name ?? '灵感图集';
@@ -360,13 +347,16 @@ export default function App(): JSX.Element {
   );
 
   const visibleCases = useMemo(() => {
-    const searched = data.cases.filter((item) => matchesSearch(item, search));
-    if (search.trim()) return searched;
-    if (activeView === 'all') return searched;
-    if (activeView === 'pending') return searched.filter((item) => item.status === 'pending');
-    if (activeView === 'favorites') return searched.filter((item) => item.favorite);
-    const collectionId = activeView.replace('collection:', '');
-    return searched.filter((item) => item.collectionId === collectionId);
+    let scoped = data.cases;
+    if (activeView === 'pending') scoped = scoped.filter((item) => item.status === 'pending');
+    if (activeView === 'favorites') scoped = scoped.filter((item) => item.favorite);
+    if (activeView === 'all') scoped = data.cases;
+    if (activeView.startsWith('collection:')) {
+      const collectionId = activeView.replace('collection:', '');
+      scoped = scoped.filter((item) => item.collectionId === collectionId);
+    }
+    if (search.trim()) return scoped.filter((item) => matchesWorkSearch(item, search));
+    return scoped;
   }, [activeView, data.cases, search]);
 
   useEffect(() => {
@@ -663,31 +653,45 @@ export default function App(): JSX.Element {
     void addUrlImage(value);
   }
 
-  function confirmCase(id: string): void {
-    updateCase(id, { status: 'confirmed' });
-    setActiveView('all');
-    setToast('已确认入库');
+  function toggleOrganizedStatus(id: string): void {
+    const item = data.cases.find((work) => work.id === id);
+    if (!item) return;
+    const nextStatus: PicFlowCase['status'] = item.status === 'pending' ? 'confirmed' : 'pending';
+    updateCase(id, { status: nextStatus });
+    setToast(nextStatus === 'confirmed' ? '\u5df2\u6574\u7406\u5b8c\u6210' : '\u5df2\u6807\u8bb0\u4e3a\u5f85\u6574\u7406');
   }
 
   function copyText(value: string | undefined, label: string): void {
-    if (!value?.trim()) {
-      setToast(`${label}为空`);
+    const text = value?.trim();
+    if (!text) {
+      if (label === 'Prompt') setToast('\u6682\u65e0 Prompt \u53ef\u590d\u5236');
+      else if (label === '\u6a21\u578b\u6807\u7b7e') setToast('\u6682\u65e0\u6a21\u578b\u6807\u7b7e\u53ef\u590d\u5236');
+      else setToast(`${label}\u4e3a\u7a7a`);
       return;
     }
-    void navigator.clipboard.writeText(value).then(() => setToast('已复制'));
+    void navigator.clipboard.writeText(text).then(() => setToast(`\u5df2\u590d\u5236${label}`)).catch(() => setToast('\u590d\u5236\u5931\u8d25'));
   }
 
-  async function copyImage(image?: PicFlowImage): Promise<void> {
+  async function copyImage(image?: PicFlowImage, label = '\u56fe\u7247'): Promise<void> {
     if (!image) {
-      setToast('图片复制失败');
+      setToast(`\u590d\u5236${label}\u5931\u8d25`);
       return;
     }
     try {
       const copied = await picflowApi.copyImage(image);
-      setToast(copied ? '已复制图片' : '图片复制失败');
+      setToast(copied ? `\u5df2\u590d\u5236${label}` : `\u590d\u5236${label}\u5931\u8d25`);
     } catch {
-      setToast('图片复制失败');
+      setToast(`\u590d\u5236${label}\u5931\u8d25`);
     }
+  }
+
+  function copyModelTags(item: PicFlowCase): void {
+    copyText(formatModelTagsForCopy(item), '\u6a21\u578b\u6807\u7b7e');
+  }
+
+  function copyWorkSummary(item: PicFlowCase): void {
+    const summary = formatWorkSummaryForCopy(item);
+    void navigator.clipboard.writeText(summary).then(() => setToast('\u5df2\u590d\u5236\u4f5c\u54c1\u4fe1\u606f')).catch(() => setToast('\u590d\u5236\u5931\u8d25'));
   }
 
   function toggleFavorite(id: string): void {
@@ -772,7 +776,12 @@ export default function App(): JSX.Element {
   function handleCollectionDragOver(event: DragEvent<HTMLElement>): void {
     if (!Array.from(event.dataTransfer.types).includes('application/x-picflow-work-id')) return;
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
+  }
+
+  function isWorkCardDrag(event: DragEvent<HTMLElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes('application/x-picflow-work-id');
   }
 
   function handleCollectionDrop(event: DragEvent<HTMLElement>, collection: PicFlowCollection): void {
@@ -1022,7 +1031,7 @@ export default function App(): JSX.Element {
           <div className="px-4 py-5">
           <nav className="space-y-1.5">
             <SidebarRow active={activeView === 'all'} icon={<MoreHorizontal />} label="全部作品" count={counts.all} onClick={() => setActiveView('all')} />
-            <SidebarRow active={activeView === 'pending'} icon={<Inbox />} label="待确认" count={counts.pending} onClick={() => setActiveView('pending')} />
+            <SidebarRow active={activeView === 'pending'} icon={<Inbox />} label={'\u5f85\u6574\u7406'} count={counts.pending} onClick={() => setActiveView('pending')} />
           </nav>
 
           <div className="sidebar-collection-section mt-6 border-t border-[#dde2dc] pt-5 dark:border-[#3b3b3b]">
@@ -1081,10 +1090,12 @@ export default function App(): JSX.Element {
           className={`min-h-0 overflow-y-auto bg-[#e6eae5] px-7 py-6 transition dark:bg-[#252525] ${galleryDragging ? 'bg-[#e1e6f3] dark:bg-[#2d2b33]' : ''}`}
           onWheel={handleGalleryWheel}
           onDragEnter={(event) => {
+            if (isWorkCardDrag(event)) return;
             event.preventDefault();
             setGalleryDragging(true);
           }}
           onDragOver={(event) => {
+            if (isWorkCardDrag(event)) return;
             event.preventDefault();
             setGalleryDragging(true);
           }}
@@ -1103,7 +1114,12 @@ export default function App(): JSX.Element {
           </div>
 
           {visibleCases.length === 0 ? (
-            <EmptyState dragging={galleryDragging} onImport={() => importImages()} />
+            <EmptyState
+              dragging={galleryDragging}
+              onImport={() => importImages()}
+              title={search.trim() ? '\u6ca1\u6709\u627e\u5230\u76f8\u5173\u4f5c\u54c1' : undefined}
+              description={search.trim() ? '\u8bd5\u8bd5\u66f4\u6362\u5173\u952e\u8bcd\uff0c\u6216\u6e05\u7a7a\u641c\u7d22\u540e\u67e5\u770b\u5f53\u524d\u89c6\u56fe\u3002' : undefined}
+            />
           ) : activeView === 'pending' && !search.trim() ? (
             <div className="grid items-start" style={{ gridTemplateColumns: `repeat(auto-fill, ${cardWidth}px)`, gap: cardGap }}>
               {visibleCases.map((item) => (
@@ -1158,9 +1174,11 @@ export default function App(): JSX.Element {
           onGuidePaste={handleGuidePaste}
           onRemoveGuideImage={removeGuideImage}
           onClearGuideImages={(item) => setConfirmState({ type: 'clear-guides', caseId: item.id, title: displayTitle(item) })}
-          onCopyGuideImage={(image) => copyText(image.url || image.localPath || image.name, '垫图')}
-          onCopyMainImage={(image) => copyImage(image)}
-          onConfirm={confirmCase}
+          onCopyGuideImage={(image) => copyImage(image, '\u57ab\u56fe')}
+          onCopyMainImage={(image) => copyImage(image, '\u4e3b\u56fe')}
+          onCopyModelTags={copyModelTags}
+          onCopyWorkSummary={copyWorkSummary}
+          onToggleOrganized={toggleOrganizedStatus}
           onCopy={copyText}
         />
         </div>
@@ -1341,19 +1359,22 @@ function SidebarRow({
   );
 }
 
-function EmptyState({ dragging, onImport }: { dragging: boolean; onImport: () => void }): JSX.Element {
+function EmptyState({ dragging, onImport, title, description }: { dragging: boolean; onImport: () => void; title?: string; description?: string }): JSX.Element {
+  const defaultTitle = dragging ? '\u677e\u5f00\u4ee5\u5bfc\u5165\u56fe\u7247' : '\u62d6\u5165\u56fe\u7247\uff0c\u5f00\u59cb\u521b\u5efa\u4f60\u7684\u7b2c\u4e00\u4e2a\u4f5c\u54c1';
+  const defaultDescription = '\u652f\u6301\u5bfc\u5165\u56fe\u7247\u3001\u62d6\u62fd\u56fe\u7247\u3001\u7c98\u8d34\u622a\u56fe\u3001\u7c98\u8d34\u56fe\u7247\u94fe\u63a5';
+
   return (
     <div className="flex min-h-[520px] items-center justify-center p-6">
       <div className="w-full max-w-lg px-8 py-10 text-center">
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[16px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#354038] dark:text-[#afc7b6]">
           <ImagePlus className="h-7 w-7" />
         </div>
-        <h3 className="text-lg font-semibold tracking-[-0.01em]">{dragging ? '松开以导入图片' : '拖入图片，开始创建你的第一个作品'}</h3>
-        <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-neutral-400">支持导入图片、拖拽图片、粘贴截图、粘贴图片链接</p>
+        <h3 className="text-lg font-semibold tracking-[-0.01em]">{title ?? defaultTitle}</h3>
+        <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-neutral-400">{description ?? defaultDescription}</p>
         <div className="mt-5 flex justify-center">
           <button className="primary-button" onClick={onImport}>
             <Upload className="h-4 w-4" />
-            导入图片
+            {'\u5bfc\u5165\u56fe\u7247'}
           </button>
         </div>
       </div>
@@ -1488,7 +1509,9 @@ function DetailPanel({
   onClearGuideImages,
   onCopyGuideImage,
   onCopyMainImage,
-  onConfirm,
+  onCopyModelTags,
+  onCopyWorkSummary,
+  onToggleOrganized,
   onCopy
 }: {
   item: PicFlowCase | null;
@@ -1509,7 +1532,9 @@ function DetailPanel({
   onClearGuideImages: (item: PicFlowCase) => void;
   onCopyGuideImage: (image: PicFlowImage) => void;
   onCopyMainImage: (image?: PicFlowImage) => void;
-  onConfirm: (id: string) => void;
+  onCopyModelTags: (item: PicFlowCase) => void;
+  onCopyWorkSummary: (item: PicFlowCase) => void;
+  onToggleOrganized: (id: string) => void;
   onCopy: (value: string | undefined, label: string) => void;
 }): JSX.Element {
   if (!item) {
@@ -1533,7 +1558,7 @@ function DetailPanel({
       <div className="border-b border-[#dde2dc] bg-[#fbfbf8]/90 px-5 py-4 backdrop-blur dark:border-[#3b3b3b] dark:bg-[#303030]/95">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-stone-500 dark:text-neutral-400">作品信息</p>
-          <p className="mt-1 text-xs text-stone-500 dark:text-neutral-400">{item.status === 'pending' ? '待确认作品' : '已入库作品'}</p>
+          <p className="mt-1 text-xs text-stone-500 dark:text-neutral-400">{item.status === 'pending' ? '\u5f85\u6574\u7406\u4f5c\u54c1' : '\u5df2\u6574\u7406\u4f5c\u54c1'}</p>
         </div>
       </div>
 
@@ -1623,7 +1648,17 @@ function DetailPanel({
         </section>
 
         <section className="mt-5 space-y-3 rounded-[16px] border border-[#dbe1da]/70 bg-[#eef1ec]/45 p-3 dark:border-[#3f3f3f] dark:bg-[#303030]/70">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-400 dark:text-neutral-500">生成信息</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-400 dark:text-neutral-500">{'\u751f\u6210\u4fe1\u606f'}</div>
+            <div className="flex items-center gap-1">
+              <button className="icon-button" onClick={() => onCopyModelTags(item)} aria-label={'\u590d\u5236\u6a21\u578b\u6807\u7b7e'} title={'\u590d\u5236\u6a21\u578b\u6807\u7b7e'}>
+                <Copy className="h-4 w-4" />
+              </button>
+              <button className="icon-button" onClick={() => onCopyWorkSummary(item)} aria-label={'\u590d\u5236\u4f5c\u54c1\u4fe1\u606f'} title={'\u590d\u5236\u4f5c\u54c1\u4fe1\u606f'}>
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
           <Field label="模型标签">
             <div className="relative" data-model-combobox="true">
               <div className="flex h-10 items-center rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#474747] dark:bg-[#343434] dark:focus-within:border-[#afc7b6] dark:focus-within:ring-[#afc7b6]/20">
@@ -1711,14 +1746,12 @@ function DetailPanel({
           <div className="text-xs text-stone-500 dark:text-neutral-400">创建时间：{formatTime(item.createdAt)}</div>
         </section>
       </div>
-      {item.status === 'pending' && (
       <div className="border-t border-[#dde2dc] bg-[#fbfbf8]/95 p-4 dark:border-[#3b3b3b] dark:bg-[#303030]/95">
-          <button className="primary-button mb-2 w-full" onClick={() => onConfirm(item.id)}>
+          <button className="primary-button mb-2 w-full" onClick={() => onToggleOrganized(item.id)}>
             <Check className="h-4 w-4" />
-            确认入库
+            {item.status === 'pending' ? '\u6574\u7406\u5b8c\u6210' : '\u6807\u8bb0\u4e3a\u5f85\u6574\u7406'}
           </button>
       </div>
-      )}
     </aside>
   );
 }
