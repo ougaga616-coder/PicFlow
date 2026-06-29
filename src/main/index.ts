@@ -164,9 +164,15 @@ function writeJson(filePath: string, data: unknown): void {
 
 function readAppConfig(): PicFlowAppConfig {
   const config = readJson<PicFlowAppConfig>(appConfigPath(), emptyConfig());
+  const seen = new Set<string>();
+  const recentLibraries = (Array.isArray(config.recentLibraries) ? config.recentLibraries : []).filter((item) => {
+    if (!item.path || seen.has(item.path)) return false;
+    seen.add(item.path);
+    return true;
+  });
   return {
     currentLibraryPath: config.currentLibraryPath,
-    recentLibraries: Array.isArray(config.recentLibraries) ? config.recentLibraries : []
+    recentLibraries
   };
 }
 

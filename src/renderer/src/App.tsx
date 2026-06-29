@@ -14,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  RefreshCw,
   Search,
   Square,
   Sun,
@@ -216,6 +217,7 @@ export default function App(): JSX.Element {
   const [libraryMenuOpen, setLibraryMenuOpen] = useState(false);
   const [libraryMenuPosition, setLibraryMenuPosition] = useState({ top: 0, right: 12 });
   const [libraryState, setLibraryState] = useState<PicFlowLibraryState>(emptyLibraryState);
+  const [libraryRefreshing, setLibraryRefreshing] = useState(false);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -327,8 +329,17 @@ export default function App(): JSX.Element {
   }, [selectedId, visibleCases]);
 
   const visibleSelectedCase = selectedId ? visibleCases.find((item) => item.id === selectedId) ?? null : null;
+  const visibleRecentLibraries = useMemo(() => {
+    const seen = new Set<string>();
+    const currentPath = libraryState.currentLibrary?.path;
+    return libraryState.recentLibraries.filter((item) => {
+      if (!item.path || item.path === currentPath || seen.has(item.path)) return false;
+      seen.add(item.path);
+      return true;
+    });
+  }, [libraryState.currentLibrary?.path, libraryState.recentLibraries]);
 
-  async function loadCurrentLibrary(nextState?: PicFlowLibraryState): Promise<void> {
+  async function loadCurrentLibrary(nextState?: PicFlowLibraryState, options: { resetView?: boolean } = { resetView: true }): Promise<void> {
     const state = nextState ?? await picflowLibrary.getCurrentLibrary();
     setLibraryState(state);
     if (!state.ready) {
@@ -342,7 +353,7 @@ export default function App(): JSX.Element {
     setDarkMode(nextData?.settings?.theme === 'dark');
     setCardScale(nextData?.settings?.cardScale ?? 1.12);
     setSelectedId(null);
-    setActiveView('all');
+    if (options.resetView !== false) setActiveView('all');
     setLoaded(true);
   }
 
@@ -660,6 +671,26 @@ export default function App(): JSX.Element {
     if (result.ok) await loadCurrentLibrary(result.state);
   }
 
+  async function refreshCurrentLibrary(): Promise<void> {
+    if (libraryRefreshing) return;
+    setLibraryRefreshing(true);
+    try {
+      const state = await picflowLibrary.getCurrentLibrary();
+      setLibraryState(state);
+      if (!state.ready) {
+        setToast('未找到当前资源库');
+        await loadCurrentLibrary(state, { resetView: false });
+        return;
+      }
+      await loadCurrentLibrary(state, { resetView: false });
+      setToast('已刷新资源库');
+    } catch {
+      setToast('资源库刷新失败');
+    } finally {
+      window.setTimeout(() => setLibraryRefreshing(false), 500);
+    }
+  }
+
   async function setupLibrary(action: 'default' | 'custom' | 'add' | 'create'): Promise<void> {
     const result =
       action === 'default'
@@ -723,6 +754,16 @@ export default function App(): JSX.Element {
               <Database className="h-4 w-4" />
             </button>
           </div>
+
+          <button
+            className="toolbar-icon-button"
+            onClick={() => void refreshCurrentLibrary()}
+            disabled={libraryRefreshing}
+            aria-label="刷新当前资源库"
+            title="刷新当前资源库"
+          >
+            <RefreshCw className={`h-4 w-4 ${libraryRefreshing ? 'animate-spin' : ''}`} />
+          </button>
 
           <button className="toolbar-icon-button" onClick={() => setDarkMode((value) => !value)} aria-label="切换浅色深色模式" title="切换浅色 / 深色模式">
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -886,11 +927,11 @@ export default function App(): JSX.Element {
           style={{ top: libraryMenuPosition.top, right: libraryMenuPosition.right }}
         >
           <div className="library-menu-current">当前资源库：{libraryState.currentLibrary?.name ?? '未设置'}</div>
-          {libraryState.recentLibraries.length > 0 && (
+          {visibleRecentLibraries.length > 0 && (
             <>
               <div className="library-menu-section">最近使用</div>
-              {libraryState.recentLibraries.map((library) => (
-                <button key={library.path} type="button" className="library-menu-item" onClick={() => void switchRecentLibrary(library.path)}>
+              {visibleRecentLibraries.map((library) => (
+                <button key={library.path} type="button" className="library-menu-item" title={library.path} onClick={() => void switchRecentLibrary(library.path)}>
                   {library.name}
                 </button>
               ))}
