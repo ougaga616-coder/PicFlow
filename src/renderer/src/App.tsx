@@ -31,6 +31,7 @@ type ConfirmState =
   | { type: 'collection'; id: string; name: string }
   | { type: 'clear-guides'; caseId: string; title: string }
   | { type: 'replace-main'; caseId: string; images: PicFlowImage[] }
+  | { type: 'move-work'; workId: string; fromCollectionName: string; toCollectionId?: string; toCollectionName: string }
   | { type: 'reset-test-data' }
   | null;
 
@@ -242,6 +243,7 @@ export default function App(): JSX.Element {
   const [libraryMenuPosition, setLibraryMenuPosition] = useState({ top: 0, right: 12 });
   const [libraryState, setLibraryState] = useState<PicFlowLibraryState>(emptyLibraryState);
   const [libraryRefreshing, setLibraryRefreshing] = useState(false);
+  const [cutWorkId, setCutWorkId] = useState<string | null>(null);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
   const suppressSaveRef = useRef(false);
 
@@ -293,6 +295,11 @@ export default function App(): JSX.Element {
       if (isTextEditingTarget(event.target)) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('[data-guide-dropzone="true"]')) return;
+      if (cutWorkId) {
+        event.preventDefault();
+        pasteCutWorkToCurrentCollection();
+        return;
+      }
       const imageFile = Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith('image/'));
       if (!imageFile) return;
       if (!ensureLibraryReady()) return;
@@ -308,18 +315,24 @@ export default function App(): JSX.Element {
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [libraryState.ready]);
+  }, [activeView, cutWorkId, data.cases, data.collections, libraryState.ready]);
 
   const selectedCase = data.cases.find((item) => item.id === selectedId) ?? null;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isTextEditingTarget(event.target)) return;
+      if (event.ctrlKey && event.key.toLowerCase() === 'x') {
+        event.preventDefault();
+        if (!selectedCase) {
+          setToast('\u8bf7\u5148\u9009\u62e9\u4e00\u4e2a\u4f5c\u54c1');
+          return;
+        }
+        setCutWorkId(selectedCase.id);
+        setToast('\u5df2\u526a\u5207\u4f5c\u54c1\uff0c\u8bf7\u8fdb\u5165\u76ee\u6807\u56fe\u96c6\u540e\u7c98\u8d34');
+        return;
+      }
       if (event.key !== 'Delete' || !selectedCase) return;
-      const target = event.target as HTMLElement | null;
-      const isEditing =
-        target?.matches('input, textarea, select') ||
-        Boolean(target?.closest('[contenteditable="true"]'));
-      if (isEditing) return;
       event.preventDefault();
       setConfirmState({ type: 'case', id: selectedCase.id, title: displayTitle(selectedCase) });
     };
@@ -353,7 +366,7 @@ export default function App(): JSX.Element {
     if (activeView === 'pending') return searched.filter((item) => item.status === 'pending');
     if (activeView === 'favorites') return searched.filter((item) => item.favorite);
     const collectionId = activeView.replace('collection:', '');
-    return searched.filter((item) => item.collectionId === collectionId && item.status === 'confirmed');
+    return searched.filter((item) => item.collectionId === collectionId);
   }, [activeView, data.cases, search]);
 
   useEffect(() => {
@@ -691,6 +704,85 @@ export default function App(): JSX.Element {
     setToast(item.favorite ? '\u5df2\u53d6\u6d88\u6536\u85cf' : '\u5df2\u6536\u85cf');
   }
 
+  function collectionName(collectionId?: string): string {
+    if (!collectionId) return '\u672a\u5206\u7c7b';
+    return data.collections.find((collection) => collection.id === collectionId)?.name ?? '\u672a\u77e5\u56fe\u96c6';
+  }
+
+  function applyWorkCollectionMove(workId: string, targetCollectionId?: string): void {
+    const targetName = collectionName(targetCollectionId);
+    setData((current) => {
+      const nextData = {
+        ...current,
+        cases: current.cases.map((work) =>
+          work.id === workId ? { ...work, collectionId: targetCollectionId || undefined, updatedAt: nowIso() } : work
+        )
+      };
+      void picflowApi.saveData(nextData);
+      return nextData;
+    });
+    setCutWorkId((current) => (current === workId ? null : current));
+    setToast(targetCollectionId ? `\u5df2\u79fb\u52a8\u5230\u300c${targetName}\u300d` : '\u5df2\u79fb\u51fa\u56fe\u96c6');
+  }
+
+  function requestMoveWorkToCollection(workId: string, targetCollectionId?: string): void {
+    const work = data.cases.find((item) => item.id === workId);
+    if (!work) {
+      setToast('\u79fb\u52a8\u5931\u8d25');
+      return;
+    }
+    if (targetCollectionId && !data.collections.some((collection) => collection.id === targetCollectionId)) {
+      setToast('\u79fb\u52a8\u5931\u8d25');
+      return;
+    }
+    const currentCollectionId = work.collectionId || undefined;
+    if ((currentCollectionId ?? '') === (targetCollectionId ?? '')) {
+      setToast(targetCollectionId ? '\u8be5\u4f5c\u54c1\u5df2\u5728\u5f53\u524d\u56fe\u96c6\u4e2d' : '\u5df2\u79fb\u51fa\u56fe\u96c6');
+      return;
+    }
+    if (currentCollectionId && targetCollectionId) {
+      setConfirmState({
+        type: 'move-work',
+        workId,
+        fromCollectionName: collectionName(currentCollectionId),
+        toCollectionId: targetCollectionId,
+        toCollectionName: collectionName(targetCollectionId)
+      });
+      return;
+    }
+    applyWorkCollectionMove(workId, targetCollectionId);
+  }
+
+  function pasteCutWorkToCurrentCollection(): void {
+    if (!cutWorkId) return;
+    if (!activeView.startsWith('collection:')) {
+      setToast('\u8bf7\u5148\u6253\u5f00\u4e00\u4e2a\u56fe\u96c6\u540e\u518d\u7c98\u8d34\u4f5c\u54c1');
+      return;
+    }
+    const targetCollectionId = activeView.replace('collection:', '');
+    requestMoveWorkToCollection(cutWorkId, targetCollectionId);
+  }
+
+  function handleWorkCardDragStart(event: DragEvent<HTMLElement>, workId: string): void {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-picflow-work-id', workId);
+    setSelectedId(workId);
+  }
+
+  function handleCollectionDragOver(event: DragEvent<HTMLElement>): void {
+    if (!Array.from(event.dataTransfer.types).includes('application/x-picflow-work-id')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleCollectionDrop(event: DragEvent<HTMLElement>, collection: PicFlowCollection): void {
+    const workId = event.dataTransfer.getData('application/x-picflow-work-id');
+    if (!workId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    requestMoveWorkToCollection(workId, collection.id);
+  }
+
   function addCollection(): void {
     const timestamp = nowIso();
     const collection: PicFlowCollection = { id: newId(), name: '新建图集', createdAt: timestamp, updatedAt: timestamp };
@@ -747,6 +839,9 @@ export default function App(): JSX.Element {
     if (confirmState.type === 'replace-main') {
       addMainImagesToCase(confirmState.caseId, confirmState.images);
       setToast('已更新主图');
+    }
+    if (confirmState.type === 'move-work') {
+      applyWorkCollectionMove(confirmState.workId, confirmState.toCollectionId);
     }
     if (confirmState.type === 'reset-test-data') {
       const result = await picflowLibrary.resetTestData();
@@ -935,9 +1030,14 @@ export default function App(): JSX.Element {
             <div className="mt-2 space-y-1">
               <SidebarRow active={activeView === 'favorites'} icon={<Heart />} label="我的收藏" count={counts.favorites} onClick={() => setActiveView('favorites')} />
               {data.collections.map((collection) => {
-                const collectionCount = data.cases.filter((item) => item.status === 'confirmed' && item.collectionId === collection.id).length;
+                const collectionCount = data.cases.filter((item) => item.collectionId === collection.id).length;
                 return (
-                <div key={collection.id} className="group relative">
+                <div
+                  key={collection.id}
+                  className="group relative"
+                  onDragOver={handleCollectionDragOver}
+                  onDrop={(event) => handleCollectionDrop(event, collection)}
+                >
                   {editingCollectionId === collection.id ? (
                     <input
                       className="field-input h-9 min-w-0 flex-1 px-2"
@@ -1015,6 +1115,7 @@ export default function App(): JSX.Element {
                   onCopy={() => copyImage(coverImage(item))}
                   onFavorite={() => toggleFavorite(item.id)}
                   onDelete={() => setConfirmState({ type: 'case', id: item.id, title: displayTitle(item) })}
+                  onDragStart={(event) => handleWorkCardDragStart(event, item.id)}
                   cardHeight={cardHeight}
                 />
               ))}
@@ -1030,6 +1131,7 @@ export default function App(): JSX.Element {
                   onCopy={() => copyImage(coverImage(item))}
                   onFavorite={() => toggleFavorite(item.id)}
                   onDelete={() => setConfirmState({ type: 'case', id: item.id, title: displayTitle(item) })}
+                  onDragStart={(event) => handleWorkCardDragStart(event, item.id)}
                   cardHeight={cardHeight}
                 />
               ))}
@@ -1049,6 +1151,7 @@ export default function App(): JSX.Element {
           onAddModelTag={addModelTag}
           onRemoveModelTag={removeModelTag}
           onUpdate={updateCase}
+          onCollectionChange={(item, collectionId) => requestMoveWorkToCollection(item.id, collectionId)}
           onMainImageDrop={handleMainImageDrop}
           onAddGuideImages={addGuideImagesToSelected}
           onGuideDrop={handleGuideDrop}
@@ -1265,6 +1368,7 @@ function CaseCard({
   onCopy,
   onFavorite,
   onDelete,
+  onDragStart,
   cardHeight
 }: {
   item: PicFlowCase;
@@ -1273,6 +1377,7 @@ function CaseCard({
   onCopy: () => void;
   onFavorite: () => void;
   onDelete: () => void;
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
   cardHeight: number;
 }): JSX.Element {
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
@@ -1282,6 +1387,8 @@ function CaseCard({
         selected ? 'border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-[#afc7b6] dark:ring-[#afc7b6]/20' : 'border-[#d8ddd7] dark:border-[#444]'
       } ${selected ? 'is-selected' : ''}`}
       style={{ height: cardHeight }}
+      draggable
+      onDragStart={onDragStart}
     >
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-[#eef0ed] dark:bg-[#383838]">
@@ -1319,6 +1426,7 @@ function PendingCard({
   onCopy,
   onFavorite,
   onDelete,
+  onDragStart,
   cardHeight
 }: {
   item: PicFlowCase;
@@ -1327,6 +1435,7 @@ function PendingCard({
   onCopy: () => void;
   onFavorite: () => void;
   onDelete: () => void;
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
   cardHeight: number;
 }): JSX.Element {
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
@@ -1334,6 +1443,8 @@ function PendingCard({
     <article
       className={`group relative overflow-hidden rounded-[18px] border bg-[#fbfbfa] shadow-[0_10px_28px_rgba(23,32,28,0.055)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(23,32,28,0.09)] dark:bg-[#303030] ${selected ? 'is-selected border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-[#afc7b6] dark:ring-[#afc7b6]/20' : 'border-[#d8ddd7] dark:border-[#444]'}`}
       style={{ height: cardHeight }}
+      draggable
+      onDragStart={onDragStart}
     >
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-stone-100 dark:bg-neutral-800">
@@ -1368,6 +1479,7 @@ function DetailPanel({
   onAddModelTag,
   onRemoveModelTag,
   onUpdate,
+  onCollectionChange,
   onMainImageDrop,
   onAddGuideImages,
   onGuideDrop,
@@ -1388,6 +1500,7 @@ function DetailPanel({
   onAddModelTag: (tag?: string) => void;
   onRemoveModelTag: (tag: string) => void;
   onUpdate: (id: string, patch: Partial<PicFlowCase>) => void;
+  onCollectionChange: (item: PicFlowCase, collectionId?: string) => void;
   onMainImageDrop: (event: DragEvent<HTMLElement>, item: PicFlowCase) => void;
   onAddGuideImages: () => void;
   onGuideDrop: (event: DragEvent<HTMLElement>, caseId: string) => void;
@@ -1579,7 +1692,7 @@ function DetailPanel({
             </div>
           </Field>
           <Field label="所属图集">
-            <select className="field-input" value={item.collectionId ?? ''} onChange={(event) => onUpdate(item.id, { collectionId: event.target.value || undefined })}>
+            <select className="field-input" value={item.collectionId ?? ''} onChange={(event) => onCollectionChange(item, event.target.value || undefined)}>
               <option value="">未分类</option>
               {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
             </select>
@@ -1645,6 +1758,31 @@ function IconButton({
 }
 
 function ConfirmDialog({ state, onCancel, onConfirm }: { state: NonNullable<ConfirmState>; onCancel: () => void; onConfirm: () => void | Promise<void> }): JSX.Element {
+  if (state.type === 'move-work') {
+    return (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/45 px-4 backdrop-blur-[2px]">
+        <div className="w-full max-w-md rounded-[18px] border border-[#d8ddd7] bg-[#fbfbf8] p-5 shadow-[0_24px_70px_rgba(23,32,28,0.18)] dark:border-[#484848] dark:bg-[#333] dark:text-neutral-100">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold">{'\u79fb\u52a8\u4f5c\u54c1\uff1f'}</h2>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-stone-600 dark:text-neutral-300">
+                {`\u8be5\u4f5c\u54c1\u5df2\u5b58\u653e\u4e8e\u300c${state.fromCollectionName}\u300d\u56fe\u96c6\u4e2d\u3002\n\n\u6bcf\u4e2a\u4f5c\u54c1\u53ea\u80fd\u5c5e\u4e8e\u4e00\u4e2a\u56fe\u96c6\u3002\n\u662f\u5426\u5c06\u5b83\u79fb\u52a8\u5230\u300c${state.toCollectionName}\u300d\uff1f`}
+              </p>
+            </div>
+            <button className="flex h-9 w-9 items-center justify-center rounded-[10px] text-stone-500 hover:bg-stone-100 dark:text-neutral-400 dark:hover:bg-neutral-800" onClick={onCancel} aria-label="Close">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className="tool-button" onClick={onCancel}>{'\u53d6\u6d88'}</button>
+            <button className="primary-button" onClick={() => void onConfirm()}>
+              {'\u79fb\u52a8'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const isCollection = state.type === 'collection';
   const isClearGuides = state.type === 'clear-guides';
   const isReplaceMain = state.type === 'replace-main';
