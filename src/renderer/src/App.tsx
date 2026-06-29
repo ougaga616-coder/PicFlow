@@ -718,7 +718,6 @@ export default function App(): JSX.Element {
           onAddModelTag={addModelTag}
           onRemoveModelTag={removeModelTag}
           onUpdate={updateCase}
-          onAddMainImages={addMainImagesToSelected}
           onMainImageDrop={handleMainImageDrop}
           onAddGuideImages={addGuideImagesToSelected}
           onGuideDrop={handleGuideDrop}
@@ -927,7 +926,6 @@ function DetailPanel({
   onAddModelTag,
   onRemoveModelTag,
   onUpdate,
-  onAddMainImages,
   onMainImageDrop,
   onAddGuideImages,
   onGuideDrop,
@@ -948,7 +946,6 @@ function DetailPanel({
   onAddModelTag: (tag?: string) => void;
   onRemoveModelTag: (tag: string) => void;
   onUpdate: (id: string, patch: Partial<PicFlowCase>) => void;
-  onAddMainImages: () => void;
   onMainImageDrop: (event: DragEvent<HTMLElement>, item: PicFlowCase) => void;
   onAddGuideImages: () => void;
   onGuideDrop: (event: DragEvent<HTMLElement>, caseId: string) => void;
@@ -987,15 +984,11 @@ function DetailPanel({
 
       <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
         <section className="rounded-[16px] bg-[#eef1ec] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[#292929]">
-          <div className="mb-3 text-xs font-semibold text-stone-600 dark:text-neutral-400">视觉素材</div>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">主图</span>
             <div className="flex items-center gap-1">
               <button className="icon-button" onClick={() => onCopyMainImage(cover)} aria-label="复制主图" title="复制主图">
                 <Copy className="h-4 w-4" />
-              </button>
-              <button className="icon-button" onClick={onAddMainImages} aria-label="添加或替换主图" title="添加或替换主图">
-                <ImagePlus className="h-4 w-4" />
               </button>
             </div>
           </div>
