@@ -159,6 +159,8 @@ function createWindow(): void {
     minWidth: 1120,
     minHeight: 720,
     title: '图迹 PicFlow',
+    frame: false,
+    titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     backgroundColor: '#f6f7f4',
     webPreferences: {
@@ -200,6 +202,18 @@ app.whenReady().then(() => {
   ipcMain.handle('picflow:copy-image', (_event, image: PicFlowImage) => copyImageToClipboard(image));
   ipcMain.handle('picflow:open-external', (_event, url: string) => {
     if (url) shell.openExternal(url);
+  });
+  ipcMain.handle('window:minimize', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+  });
+  ipcMain.handle('window:close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
   createWindow();

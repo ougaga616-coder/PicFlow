@@ -11,3 +11,9 @@ contextBridge.exposeInMainWorld('picflow', {
   copyImage: (image: unknown) => ipcRenderer.invoke('picflow:copy-image', image),
   openExternal: (url: string) => ipcRenderer.invoke('picflow:open-external', url)
 });
+
+contextBridge.exposeInMainWorld('picflowWindow', {
+  minimize: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+  close: () => ipcRenderer.invoke('window:close')
+});

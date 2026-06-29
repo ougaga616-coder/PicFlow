@@ -73,8 +73,15 @@ export type PicFlowApi = {
   openExternal: (url: string) => Promise<void>;
 };
 
+export type PicFlowWindowApi = {
+  minimize: () => Promise<void>;
+  toggleMaximize: () => Promise<void>;
+  close: () => Promise<void>;
+};
+
 declare global {
   interface Window {
     picflow?: PicFlowApi;
+    picflowWindow?: PicFlowWindowApi;
   }
 }

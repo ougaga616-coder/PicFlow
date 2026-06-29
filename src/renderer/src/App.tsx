@@ -7,10 +7,12 @@ import {
   ImagePlus,
   Inbox,
   Link,
+  Minus,
   Moon,
   MoreHorizontal,
   Plus,
   Search,
+  Square,
   Sun,
   Trash2,
   Upload,
@@ -63,6 +65,12 @@ const picflowApi = window.picflow ?? {
   openExternal: async (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
+};
+
+const picflowWindow = window.picflowWindow ?? {
+  minimize: async () => undefined,
+  toggleMaximize: async () => undefined,
+  close: async () => undefined
 };
 
 function nowIso(): string {
@@ -569,11 +577,11 @@ export default function App(): JSX.Element {
       onDrop={(event) => event.preventDefault()}
     >
       <header
-        className="grid h-[96px] shrink-0 border-b border-[#d9ded8]/80 bg-[#f7f8f5]/92 backdrop-blur dark:border-[#383838] dark:bg-[#2d2d2d]/95"
+        className="app-titlebar grid h-[112px] shrink-0 border-b border-[#d9ded8]/80 bg-[#f7f8f5]/92 backdrop-blur dark:border-[#383838] dark:bg-[#2d2d2d]/95"
         style={{ gridTemplateColumns: '260px minmax(620px, 1fr) 384px' }}
       >
         <BrandHeader />
-        <div className="flex min-w-0 items-center gap-2.5 px-5">
+        <div className="toolbar flex min-w-0 items-center gap-2.5 px-5">
           <label className="relative flex h-10 min-w-[260px] max-w-[460px] flex-[1_1_380px] items-center">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400 dark:text-neutral-500" />
             <input
@@ -588,11 +596,13 @@ export default function App(): JSX.Element {
             <Upload className="h-4 w-4" />
             导入图片
           </button>
-          <button className="icon-button shrink-0" onClick={() => setDarkMode((value) => !value)} aria-label="切换浅色深色模式" title="切换浅色 / 深色模式">
+          <button className="toolbar-icon-button shrink-0" onClick={() => setDarkMode((value) => !value)} aria-label="切换浅色深色模式" title="切换浅色 / 深色模式">
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         </div>
-        <div className="bg-[#e6eae5] dark:bg-[#282828]" />
+        <div className="flex items-center justify-end bg-[#e6eae5] px-4 dark:bg-[#282828]">
+          <WindowControls />
+        </div>
       </header>
 
       <main className="grid min-h-0 flex-1" style={{ gridTemplateColumns: '260px minmax(620px, 1fr) 384px' }}>
@@ -742,12 +752,31 @@ export default function App(): JSX.Element {
 function BrandHeader(): JSX.Element {
   return (
     <div className="brand-header">
-      <div className="brand-logo">PF</div>
-      <div className="brand-text">
-        <div className="brand-title">图迹 PicFlow</div>
-        <div className="brand-subtitle">AIGC 视觉灵感库</div>
-        <div className="brand-studio">by OMG Design Lab</div>
+      <div className="brand-identity">
+        <div className="brand-logo">PF</div>
+        <div className="brand-name-block">
+          <div className="brand-title">图迹</div>
+          <div className="brand-en">PICFLOW</div>
+        </div>
       </div>
+      <div className="brand-description">AIGC 视觉灵感库</div>
+      <div className="brand-studio">by OMG Design Lab</div>
+    </div>
+  );
+}
+
+function WindowControls(): JSX.Element {
+  return (
+    <div className="window-controls" aria-label="窗口控制">
+      <button className="window-control-button" onClick={() => void picflowWindow.minimize()} aria-label="最小化" title="最小化">
+        <Minus className="h-4 w-4" />
+      </button>
+      <button className="window-control-button" onClick={() => void picflowWindow.toggleMaximize()} aria-label="最大化或还原" title="最大化 / 还原">
+        <Square className="h-3.5 w-3.5" />
+      </button>
+      <button className="window-control-button is-close" onClick={() => void picflowWindow.close()} aria-label="关闭" title="关闭">
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }

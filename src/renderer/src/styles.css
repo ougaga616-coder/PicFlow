@@ -36,6 +36,19 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.app-titlebar {
+  -webkit-app-region: drag;
+}
+
+button,
+input,
+textarea,
+select,
+.toolbar,
+.window-controls {
+  -webkit-app-region: no-drag;
+}
+
 ::-webkit-scrollbar {
   width: 9px;
   height: 9px;
@@ -82,6 +95,47 @@ button:disabled {
   @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-stone-500 transition hover:border-[#d7ddd6] hover:bg-[#f1f3f0] hover:text-ink active:scale-[0.98] dark:text-neutral-400 dark:hover:border-[#555] dark:hover:bg-[#444] dark:hover:text-neutral-100;
 }
 
+.toolbar-icon-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7ddd6;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #78716c;
+  box-shadow: 0 4px 12px rgba(54, 73, 60, 0.05);
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.toolbar-icon-button:hover {
+  border-color: rgba(95, 127, 105, 0.22);
+  background: rgba(255, 255, 255, 0.86);
+  color: #17201c;
+}
+
+.toolbar-icon-button:active {
+  transform: translateY(1px);
+}
+
+.dark .toolbar-icon-button {
+  border-color: #4a4a4a;
+  background: rgba(62, 62, 62, 0.72);
+  color: #a3a3a3;
+  box-shadow: none;
+}
+
+.dark .toolbar-icon-button:hover {
+  border-color: rgba(175, 199, 182, 0.28);
+  background: rgba(76, 76, 76, 0.9);
+  color: #f4f4f4;
+}
+
 .toast {
   position: fixed;
   left: 50%;
@@ -107,29 +161,37 @@ button:disabled {
 
 .brand-header {
   display: flex;
-  height: 96px;
+  min-height: 112px;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 18px 18px 14px;
+}
+
+.brand-identity {
+  display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 20px 0 24px;
+  gap: 12px;
 }
 
 .brand-logo {
   display: flex;
   width: 44px;
   height: 44px;
-  flex-shrink: 0;
+  flex: 0 0 44px;
   align-items: center;
   justify-content: center;
   border-radius: 13px;
-  background: #17201c;
+  background: linear-gradient(145deg, #22362a, #3e5c48);
   color: #ffffff;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  box-shadow: 0 12px 26px rgba(23, 32, 28, 0.16);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  box-shadow:
+    0 10px 24px rgba(34, 54, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-.brand-text {
+.brand-name-block {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -138,46 +200,116 @@ button:disabled {
 
 .brand-title {
   overflow: hidden;
+  color: #17201c;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 26px;
+  letter-spacing: -0.03em;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 21px;
-  letter-spacing: -0.01em;
 }
 
-.brand-subtitle {
-  margin-top: 7px;
+.brand-en {
+  margin-top: 1px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: #78716c;
   font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-description {
+  margin-top: 14px;
+  overflow: hidden;
+  color: #78716c;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-studio {
-  margin-top: 4px;
+  margin-top: 6px;
   overflow: hidden;
+  color: #a8a29e;
+  font-size: 13px;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #a8a29e;
-  font-size: 11px;
-  line-height: 15px;
 }
 
 .dark .brand-logo {
-  background: #ddd8cf;
-  color: #252525;
+  background: linear-gradient(145deg, #d8ded7, #9eb6a7);
+  color: #202720;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-.dark .brand-subtitle {
+.dark .brand-title {
+  color: #f2f3f0;
+}
+
+.dark .brand-en,
+.dark .brand-description {
   color: #a3a3a3;
 }
 
 .dark .brand-studio {
   color: #737373;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.window-control-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #78716c;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.window-control-button:hover {
+  background: rgba(255, 255, 255, 0.66);
+  color: #17201c;
+}
+
+.window-control-button:active {
+  transform: translateY(1px);
+}
+
+.window-control-button.is-close:hover {
+  background: rgba(176, 73, 61, 0.12);
+  color: #a4493f;
+}
+
+.dark .window-control-button {
+  color: #a3a3a3;
+}
+
+.dark .window-control-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f4f4;
+}
+
+.dark .window-control-button.is-close:hover {
+  background: rgba(176, 73, 61, 0.22);
+  color: #e5a19a;
 }
 
 .sidebar-section-header {
