@@ -22,7 +22,7 @@ import {
   X
 } from 'lucide-react';
 import { ClipboardEvent as ReactClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage } from './types';
+import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage, PicFlowLibraryApi, PicFlowLibraryState } from './types';
 
 type ViewKey = 'all' | 'pending' | 'favorites' | `collection:${string}`;
 type ConfirmState =
@@ -36,6 +36,7 @@ const emptyData: PicFlowData = { version: 1, cases: [], collections: [], setting
 const modelPresets = ['Nano banana', 'Nano banana Pro', 'GPT Image', 'Midjourney', 'Stable Diffusion', '即梦', '可灵', 'Libli'];
 const minCardScale = 0.78;
 const maxCardScale = 1.45;
+const emptyLibraryState: PicFlowLibraryState = { ready: false, setupRequired: true, missing: false, recentLibraries: [] };
 
 const picflowApi = window.picflow ?? {
   loadData: async () => {
@@ -76,11 +77,17 @@ const picflowWindow = window.picflowWindow ?? {
   close: async () => undefined
 };
 
-const picflowLibrary = window.picflowLibrary ?? {
+const fallbackPicflowLibrary: PicFlowLibraryApi = {
+  getCurrentLibrary: async () => ({ ready: true, setupRequired: false, missing: false, currentLibrary: { name: '浏览器预览', path: '', lastOpenedAt: nowIso() }, recentLibraries: [] }),
+  setupDefaultLibrary: async () => ({ ok: true, message: '已创建默认资源库' }),
+  chooseCustomLibrary: async () => ({ ok: false, message: '桌面应用中可选择自定义位置' }),
   createLibrary: async () => ({ ok: false, message: '创建资源库功能开发中' }),
   addLibrary: async () => ({ ok: false, message: '添加资源库功能开发中' }),
-  openLibraryLocation: async () => ({ ok: false, message: '暂未找到资源库位置' })
+  openLibraryLocation: async () => ({ ok: false, message: '暂未找到资源库位置' }),
+  switchLibrary: async () => ({ ok: false, message: '资源库不存在或无效' })
 };
+
+const picflowLibrary = window.picflowLibrary ?? fallbackPicflowLibrary;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -206,15 +213,11 @@ export default function App(): JSX.Element {
   const [sidePanelsCollapsed, setSidePanelsCollapsed] = useState(() => localStorage.getItem('picflow.sidePanelsCollapsed') === 'true');
   const [libraryMenuOpen, setLibraryMenuOpen] = useState(false);
   const [libraryMenuPosition, setLibraryMenuPosition] = useState({ top: 0, right: 12 });
+  const [libraryState, setLibraryState] = useState<PicFlowLibraryState>(emptyLibraryState);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    void picflowApi.loadData().then((nextData) => {
-      setData(nextData ?? emptyData);
-      setDarkMode(nextData?.settings?.theme === 'dark');
-      setCardScale(nextData?.settings?.cardScale ?? 1.12);
-      setLoaded(true);
-    });
+    void loadCurrentLibrary();
   }, []);
 
   useEffect(() => {
@@ -242,11 +245,12 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     if (!loaded) return;
+    if (!libraryState.ready) return;
     const timer = window.setTimeout(() => {
       void picflowApi.saveData(data);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [data, loaded]);
+  }, [data, loaded, libraryState.ready]);
 
   useEffect(() => {
     if (!toast) return;
@@ -322,6 +326,24 @@ export default function App(): JSX.Element {
 
   const visibleSelectedCase = selectedId ? visibleCases.find((item) => item.id === selectedId) ?? null : null;
 
+  async function loadCurrentLibrary(nextState?: PicFlowLibraryState): Promise<void> {
+    const state = nextState ?? await picflowLibrary.getCurrentLibrary();
+    setLibraryState(state);
+    if (!state.ready) {
+      setData(emptyData);
+      setSelectedId(null);
+      setLoaded(true);
+      return;
+    }
+    const nextData = await picflowApi.loadData();
+    setData(nextData ?? emptyData);
+    setDarkMode(nextData?.settings?.theme === 'dark');
+    setCardScale(nextData?.settings?.cardScale ?? 1.12);
+    setSelectedId(null);
+    setActiveView('all');
+    setLoaded(true);
+  }
+
   function persist(nextData: PicFlowData): void {
     setData(nextData);
     void picflowApi.saveData(nextData);
@@ -389,13 +411,13 @@ export default function App(): JSX.Element {
 
   async function addGuideImagesToSelected(): Promise<void> {
     if (!selectedCase) return;
-    const images = await picflowApi.selectImages();
+    const images = await picflowApi.selectImages('reference');
     if (!images.length) return;
     addGuideImagesToCase(selectedCase.id, images);
     setToast('已添加垫图');
   }
 
-  async function importDroppedImages(event: DragEvent<HTMLElement>): Promise<PicFlowImage[]> {
+  async function importDroppedImages(event: DragEvent<HTMLElement>, target: 'asset' | 'reference' = 'asset'): Promise<PicFlowImage[]> {
     event.preventDefault();
     event.stopPropagation();
 
@@ -413,26 +435,26 @@ export default function App(): JSX.Element {
       setToast('不支持该文件类型');
       return [];
     }
-    return picflowApi.importImagePaths(paths);
+    return picflowApi.importImagePaths(paths, target);
   }
 
   async function handleGalleryDrop(event: DragEvent<HTMLElement>): Promise<void> {
     setGalleryDragging(false);
-    const images = await importDroppedImages(event);
+    const images = await importDroppedImages(event, 'asset');
     if (!images.length) return;
     appendWork(createCase({ images, captureMethod: 'drag-drop' }));
     setToast('已添加作品');
   }
 
   async function handleGuideDrop(event: DragEvent<HTMLElement>, caseId: string): Promise<void> {
-    const images = await importDroppedImages(event);
+    const images = await importDroppedImages(event, 'reference');
     if (!images.length) return;
     addGuideImagesToCase(caseId, images);
     setToast('已添加垫图');
   }
 
   async function handleMainImageDrop(event: DragEvent<HTMLElement>, item: PicFlowCase): Promise<void> {
-    const images = await importDroppedImages(event);
+    const images = await importDroppedImages(event, 'asset');
     if (!images.length) return;
     if (item.images.length > 0) {
       setConfirmState({ type: 'replace-main', caseId: item.id, images });
@@ -448,7 +470,7 @@ export default function App(): JSX.Element {
     if (!imageFile) return;
     event.preventDefault();
     const dataUrl = await fileToDataUrl(imageFile);
-    const image = await picflowApi.saveDataUrlImage(dataUrl, imageFile.name || 'guide-image.png');
+    const image = await picflowApi.saveDataUrlImage(dataUrl, imageFile.name || 'guide-image.png', 'reference');
     addGuideImagesToCase(caseId, [image]);
     setToast('已添加垫图');
   }
@@ -615,6 +637,30 @@ export default function App(): JSX.Element {
           ? await picflowLibrary.addLibrary()
           : await picflowLibrary.openLibraryLocation();
     setToast(result.message);
+    if (result.state) setLibraryState(result.state);
+    if (result.ok && action !== 'open') await loadCurrentLibrary(result.state);
+  }
+
+  async function switchRecentLibrary(path: string): Promise<void> {
+    setLibraryMenuOpen(false);
+    const result = await picflowLibrary.switchLibrary(path);
+    setToast(result.message);
+    if (result.state) setLibraryState(result.state);
+    if (result.ok) await loadCurrentLibrary(result.state);
+  }
+
+  async function setupLibrary(action: 'default' | 'custom' | 'add' | 'create'): Promise<void> {
+    const result =
+      action === 'default'
+        ? await picflowLibrary.setupDefaultLibrary()
+        : action === 'custom'
+          ? await picflowLibrary.chooseCustomLibrary()
+          : action === 'add'
+            ? await picflowLibrary.addLibrary()
+            : await picflowLibrary.createLibrary();
+    setToast(result.message);
+    if (result.state) setLibraryState(result.state);
+    if (result.ok) await loadCurrentLibrary(result.state);
   }
 
   const cardWidth = Math.round(200 * cardScale);
@@ -828,17 +874,37 @@ export default function App(): JSX.Element {
           data-library-menu="true"
           style={{ top: libraryMenuPosition.top, right: libraryMenuPosition.right }}
         >
-          <div className="library-menu-current">当前资源库：默认资源库</div>
+          <div className="library-menu-current">当前资源库：{libraryState.currentLibrary?.name ?? '未设置'}</div>
+          {libraryState.recentLibraries.length > 0 && (
+            <>
+              <div className="library-menu-section">最近使用</div>
+              {libraryState.recentLibraries.map((library) => (
+                <button key={library.path} type="button" className="library-menu-item" onClick={() => void switchRecentLibrary(library.path)}>
+                  {library.name}
+                </button>
+              ))}
+            </>
+          )}
           <button type="button" className="library-menu-item" onClick={() => void runLibraryAction('create')}>
-            创建资源库...
+            创建新资源库...
           </button>
           <button type="button" className="library-menu-item" onClick={() => void runLibraryAction('add')}>
-            添加资源库...
+            添加已有资源库...
           </button>
           <button type="button" className="library-menu-item" onClick={() => void runLibraryAction('open')}>
             打开资源库位置
           </button>
         </div>
+      )}
+
+      {!libraryState.ready && loaded && (
+        <LibraryGateDialog
+          missing={libraryState.missing}
+          onSetupDefault={() => void setupLibrary('default')}
+          onChooseCustom={() => void setupLibrary('custom')}
+          onAddExisting={() => void setupLibrary('add')}
+          onCreateNew={() => void setupLibrary('create')}
+        />
       )}
 
       {toast && <div className="toast">{toast}</div>}
@@ -876,6 +942,48 @@ function WindowControls(): JSX.Element {
       <button className="window-control-button is-close" onClick={() => void picflowWindow.close()} aria-label="关闭" title="关闭">
         <X className="h-4 w-4" />
       </button>
+    </div>
+  );
+}
+
+function LibraryGateDialog({
+  missing,
+  onSetupDefault,
+  onChooseCustom,
+  onAddExisting,
+  onCreateNew
+}: {
+  missing: boolean;
+  onSetupDefault: () => void;
+  onChooseCustom: () => void;
+  onAddExisting: () => void;
+  onCreateNew: () => void;
+}): JSX.Element {
+  return (
+    <div className="library-gate">
+      <div className="library-gate-panel">
+        <div className="library-gate-icon">
+          <Database className="h-5 w-5" />
+        </div>
+        <h2>{missing ? '未找到当前资源库' : '设置你的 PicFlow 资源库'}</h2>
+        <p>
+          {missing
+            ? '可能是资源库文件夹被移动、重命名或删除。你可以重新添加已有资源库，或创建一个新的资源库。'
+            : '资源库用于保存你的图片、垫图、Prompt、图集和收藏信息。你可以使用默认位置，也可以选择一个自定义文件夹，方便备份和迁移。'}
+        </p>
+        {missing ? (
+          <div className="library-gate-actions">
+            <button className="primary-button" onClick={onAddExisting}>添加已有资源库</button>
+            <button className="tool-button" onClick={onCreateNew}>创建新资源库</button>
+            <button className="tool-button" onClick={onSetupDefault}>使用默认位置</button>
+          </div>
+        ) : (
+          <div className="library-gate-actions">
+            <button className="primary-button" onClick={onSetupDefault}>使用默认位置</button>
+            <button className="tool-button" onClick={onChooseCustom}>选择自定义位置</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

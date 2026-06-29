@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, copyFileSync, writeFileSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 type PicFlowCaptureMethod = 'manual' | 'local-import' | 'drag-drop' | 'clipboard-paste' | 'url-paste';
@@ -59,9 +59,37 @@ type PicFlowData = {
 type PicFlowLibraryActionResult = {
   ok: boolean;
   message: string;
+  state?: PicFlowLibraryState;
+};
+
+type PicFlowLibraryManifest = {
+  name: string;
+  version: 1;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PicFlowLibrarySummary = {
+  name: string;
+  path: string;
+  lastOpenedAt: string;
+};
+
+type PicFlowAppConfig = {
+  currentLibraryPath?: string;
+  recentLibraries: PicFlowLibrarySummary[];
+};
+
+type PicFlowLibraryState = {
+  ready: boolean;
+  setupRequired: boolean;
+  missing: boolean;
+  currentLibrary?: PicFlowLibrarySummary;
+  recentLibraries: PicFlowLibrarySummary[];
 };
 
 const emptyData = (): PicFlowData => ({ version: 1, cases: [], collections: [], settings: { theme: 'light', cardScale: 1.12 } });
+const emptyConfig = (): PicFlowAppConfig => ({ recentLibraries: [] });
 let mainWindow: BrowserWindow | null = null;
 
 function dataDir(): string {
@@ -69,77 +97,248 @@ function dataDir(): string {
   return join(localRoot, 'PicFlow', 'App', 'local-data');
 }
 
-function imageDir(): string {
+function legacyImageDir(): string {
   return join(dataDir(), 'images');
 }
 
-function dataPath(): string {
+function legacyDataPath(): string {
   return join(dataDir(), 'aigc-flow-library-data.json');
 }
 
-function ensureStorage(): void {
-  mkdirSync(imageDir(), { recursive: true });
-  if (!existsSync(dataPath())) {
-    writeFileSync(dataPath(), JSON.stringify(emptyData(), null, 2), 'utf-8');
+function appConfigPath(): string {
+  return join(app.getPath('userData'), 'picflow-global-settings.json');
+}
+
+function defaultLibraryPath(): string {
+  return join(app.getPath('userData'), 'PicFlow Library');
+}
+
+function manifestPath(root: string): string {
+  return join(root, 'picflow-library.json');
+}
+
+function worksPath(root: string): string {
+  return join(root, 'data', 'works.json');
+}
+
+function collectionsPath(root: string): string {
+  return join(root, 'data', 'collections.json');
+}
+
+function settingsPath(root: string): string {
+  return join(root, 'data', 'settings.json');
+}
+
+function assetsDir(root: string): string {
+  return join(root, 'assets');
+}
+
+function referencesDir(root: string): string {
+  return join(root, 'references');
+}
+
+function readJson<T>(filePath: string, fallback: T): T {
+  try {
+    if (!existsSync(filePath)) return fallback;
+    return JSON.parse(readFileSync(filePath, 'utf-8')) as T;
+  } catch {
+    return fallback;
   }
+}
+
+function writeJson(filePath: string, data: unknown): void {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function readAppConfig(): PicFlowAppConfig {
+  const config = readJson<PicFlowAppConfig>(appConfigPath(), emptyConfig());
+  return {
+    currentLibraryPath: config.currentLibraryPath,
+    recentLibraries: Array.isArray(config.recentLibraries) ? config.recentLibraries : []
+  };
+}
+
+function writeAppConfig(config: PicFlowAppConfig): PicFlowAppConfig {
+  mkdirSync(app.getPath('userData'), { recursive: true });
+  writeFileSync(appConfigPath(), JSON.stringify(config, null, 2), 'utf-8');
+  return config;
+}
+
+function validLibraryPath(root?: string): root is string {
+  return Boolean(root && existsSync(root) && existsSync(manifestPath(root)));
+}
+
+function readManifest(root: string): PicFlowLibraryManifest | null {
+  if (!validLibraryPath(root)) return null;
+  const manifest = readJson<PicFlowLibraryManifest | null>(manifestPath(root), null);
+  if (!manifest || manifest.version !== 1 || !manifest.name) return null;
+  return manifest;
+}
+
+function libraryNameFromPath(root: string, fallback = 'PicFlow Library'): string {
+  return basename(root) || fallback;
+}
+
+function normalizeData(data: Partial<PicFlowData>): PicFlowData {
+  return {
+    version: 1,
+    cases: Array.isArray(data.cases) ? data.cases : [],
+    collections: Array.isArray(data.collections) ? data.collections : [],
+    settings: data.settings ?? { theme: 'light', cardScale: 1.12 }
+  };
+}
+
+function readLegacyData(): PicFlowData {
+  return normalizeData(readJson<PicFlowData>(legacyDataPath(), emptyData()));
+}
+
+function hasLegacyData(): boolean {
+  if (!existsSync(legacyDataPath())) return false;
+  const data = readLegacyData();
+  return data.cases.length > 0 || data.collections.length > 0 || existsSync(legacyImageDir());
+}
+
+function ensureLibraryStructure(root: string, name = libraryNameFromPath(root), seed?: PicFlowData): PicFlowLibrarySummary {
+  const timestamp = new Date().toISOString();
+  mkdirSync(join(root, 'data'), { recursive: true });
+  mkdirSync(assetsDir(root), { recursive: true });
+  mkdirSync(referencesDir(root), { recursive: true });
+  mkdirSync(join(root, 'thumbnails'), { recursive: true });
+
+  if (!existsSync(manifestPath(root))) {
+    const manifest: PicFlowLibraryManifest = {
+      name,
+      version: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    writeJson(manifestPath(root), manifest);
+  }
+
+  if (!existsSync(worksPath(root))) writeJson(worksPath(root), seed?.cases ?? []);
+  if (!existsSync(collectionsPath(root))) writeJson(collectionsPath(root), seed?.collections ?? []);
+  if (!existsSync(settingsPath(root))) writeJson(settingsPath(root), seed?.settings ?? { theme: 'light', cardScale: 1.12 });
+
+  const manifest = readManifest(root);
+  return {
+    name: manifest?.name ?? name,
+    path: root,
+    lastOpenedAt: timestamp
+  };
+}
+
+function updateRecentLibrary(summary: PicFlowLibrarySummary): PicFlowAppConfig {
+  const config = readAppConfig();
+  const nextSummary = { ...summary, lastOpenedAt: new Date().toISOString() };
+  const recentLibraries = [
+    nextSummary,
+    ...config.recentLibraries.filter((item) => item.path !== summary.path)
+  ].slice(0, 8);
+  return writeAppConfig({ currentLibraryPath: summary.path, recentLibraries });
+}
+
+function ensureLegacyLibraryIfNeeded(): PicFlowLibrarySummary | null {
+  const config = readAppConfig();
+  if (config.currentLibraryPath) return null;
+  if (!hasLegacyData()) return null;
+  const summary = ensureLibraryStructure(dataDir(), '默认资源库', readLegacyData());
+  updateRecentLibrary(summary);
+  return summary;
+}
+
+function getCurrentLibraryPath(): string | null {
+  const config = readAppConfig();
+  if (validLibraryPath(config.currentLibraryPath)) return config.currentLibraryPath;
+  const legacy = ensureLegacyLibraryIfNeeded();
+  return legacy?.path ?? null;
+}
+
+function getLibraryState(): PicFlowLibraryState {
+  const config = readAppConfig();
+  const currentPath = getCurrentLibraryPath();
+  if (currentPath) {
+    const manifest = readManifest(currentPath);
+    const currentLibrary = {
+      name: manifest?.name ?? libraryNameFromPath(currentPath),
+      path: currentPath,
+      lastOpenedAt: new Date().toISOString()
+    };
+    return {
+      ready: true,
+      setupRequired: false,
+      missing: false,
+      currentLibrary,
+      recentLibraries: readAppConfig().recentLibraries
+    };
+  }
+  return {
+    ready: false,
+    setupRequired: !config.currentLibraryPath,
+    missing: Boolean(config.currentLibraryPath),
+    recentLibraries: config.recentLibraries
+  };
 }
 
 function readData(): PicFlowData {
-  ensureStorage();
-  try {
-    const parsed = JSON.parse(readFileSync(dataPath(), 'utf-8')) as PicFlowData;
-    return {
-      version: 1,
-      cases: Array.isArray(parsed.cases) ? parsed.cases : [],
-      collections: Array.isArray(parsed.collections) ? parsed.collections : [],
-      settings: parsed.settings ?? { theme: 'light', cardScale: 1.12 }
-    };
-  } catch {
-    return emptyData();
-  }
+  const libraryPath = getCurrentLibraryPath();
+  if (!libraryPath) return emptyData();
+  ensureLibraryStructure(libraryPath, libraryNameFromPath(libraryPath));
+  return {
+    version: 1,
+    cases: readJson<PicFlowCase[]>(worksPath(libraryPath), []),
+    collections: readJson<PicFlowCollection[]>(collectionsPath(libraryPath), []),
+    settings: readJson<PicFlowData['settings']>(settingsPath(libraryPath), { theme: 'light', cardScale: 1.12 })
+  };
 }
 
 function writeData(data: PicFlowData): PicFlowData {
-  ensureStorage();
   const normalized: PicFlowData = {
     version: 1,
     cases: Array.isArray(data.cases) ? data.cases : [],
     collections: Array.isArray(data.collections) ? data.collections : [],
     settings: data.settings ?? { theme: 'light', cardScale: 1.12 }
   };
-  writeFileSync(dataPath(), JSON.stringify(normalized, null, 2), 'utf-8');
+  const libraryPath = getCurrentLibraryPath();
+  if (!libraryPath) return normalized;
+  ensureLibraryStructure(libraryPath, libraryNameFromPath(libraryPath));
+  writeJson(worksPath(libraryPath), normalized.cases);
+  writeJson(collectionsPath(libraryPath), normalized.collections);
+  writeJson(settingsPath(libraryPath), normalized.settings ?? { theme: 'light', cardScale: 1.12 });
   return normalized;
 }
 
-function copyImageToLibrary(filePath: string): PicFlowImage {
-  ensureStorage();
+function copyImageToLibrary(filePath: string, target: 'asset' | 'reference' = 'asset'): PicFlowImage {
+  const libraryPath = getCurrentLibraryPath() ?? ensureLibraryStructure(defaultLibraryPath(), '默认资源库').path;
+  updateRecentLibrary(ensureLibraryStructure(libraryPath, libraryNameFromPath(libraryPath)));
   const extension = extname(filePath) || '.png';
   const id = randomUUID();
-  const targetPath = join(imageDir(), `${id}${extension}`);
+  const targetPath = join(target === 'reference' ? referencesDir(libraryPath) : assetsDir(libraryPath), `${id}${extension}`);
   copyFileSync(filePath, targetPath);
   return {
     id,
     localPath: targetPath,
     name: basename(filePath),
-    type: 'reference',
+    type: target === 'reference' ? 'reference' : 'cover',
     addedAt: new Date().toISOString()
   };
 }
 
-function saveDataUrlImage(dataUrl: string, name = 'clipboard-image.png'): PicFlowImage {
-  ensureStorage();
+function saveDataUrlImage(dataUrl: string, name = 'clipboard-image.png', target: 'asset' | 'reference' = 'asset'): PicFlowImage {
+  const libraryPath = getCurrentLibraryPath() ?? ensureLibraryStructure(defaultLibraryPath(), '默认资源库').path;
+  updateRecentLibrary(ensureLibraryStructure(libraryPath, libraryNameFromPath(libraryPath)));
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) throw new Error('Unsupported image data');
   const mime = match[1];
   const extension = mime.includes('jpeg') ? '.jpg' : `.${mime.split('/')[1] || 'png'}`;
   const id = randomUUID();
-  const targetPath = join(imageDir(), `${id}${extension}`);
+  const targetPath = join(target === 'reference' ? referencesDir(libraryPath) : assetsDir(libraryPath), `${id}${extension}`);
   writeFileSync(targetPath, Buffer.from(match[2], 'base64'));
   return {
     id,
     localPath: targetPath,
     name,
-    type: 'screenshot',
+    type: target === 'reference' ? 'reference' : 'screenshot',
     addedAt: new Date().toISOString()
   };
 }
@@ -157,40 +356,43 @@ function copyImageToClipboard(image: PicFlowImage): boolean {
   return true;
 }
 
-async function createLibraryShell(): Promise<PicFlowLibraryActionResult> {
+function setCurrentLibrary(root: string): PicFlowLibrarySummary {
+  const summary = ensureLibraryStructure(root, libraryNameFromPath(root));
+  updateRecentLibrary(summary);
+  return summary;
+}
+
+function setupDefaultLibrary(): PicFlowLibraryActionResult {
+  const summary = ensureLibraryStructure(defaultLibraryPath(), '默认资源库');
+  updateRecentLibrary(summary);
+  return { ok: true, message: '已创建默认资源库', state: getLibraryState() };
+}
+
+async function chooseCustomLibrary(): Promise<PicFlowLibraryActionResult> {
   const result = await dialog.showOpenDialog({
-    title: '创建 PicFlow 资源库',
+    title: '选择 PicFlow 资源库存放位置',
     properties: ['openDirectory', 'createDirectory']
   });
-  if (result.canceled || !result.filePaths[0]) return { ok: false, message: '已取消创建资源库' };
+  if (result.canceled || !result.filePaths[0]) return { ok: false, message: '请先设置资源库后再开始使用 PicFlow', state: getLibraryState() };
+  const summary = ensureLibraryStructure(result.filePaths[0], libraryNameFromPath(result.filePaths[0]));
+  updateRecentLibrary(summary);
+  return { ok: true, message: '已创建资源库', state: getLibraryState() };
+}
+
+async function createLibraryShell(): Promise<PicFlowLibraryActionResult> {
+  const result = await dialog.showOpenDialog({
+    title: '创建新 PicFlow 资源库',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, message: '已取消创建资源库', state: getLibraryState() };
 
   try {
-    const root = join(result.filePaths[0], 'PicFlow Library');
-    const manifestPath = join(root, 'picflow-library.json');
-    if (existsSync(manifestPath)) return { ok: false, message: '资源库已存在' };
-
-    mkdirSync(join(root, 'data'), { recursive: true });
-    mkdirSync(join(root, 'assets'), { recursive: true });
-    mkdirSync(join(root, 'references'), { recursive: true });
-
-    const timestamp = new Date().toISOString();
-    writeFileSync(
-      manifestPath,
-      JSON.stringify(
-        {
-          name: '默认资源库',
-          version: 1,
-          createdAt: timestamp,
-          updatedAt: timestamp
-        },
-        null,
-        2
-      ),
-      'utf-8'
-    );
-    return { ok: true, message: '已创建资源库' };
+    if (existsSync(manifestPath(result.filePaths[0]))) return { ok: false, message: '该文件夹已经是 PicFlow 资源库', state: getLibraryState() };
+    const summary = ensureLibraryStructure(result.filePaths[0], libraryNameFromPath(result.filePaths[0]));
+    updateRecentLibrary(summary);
+    return { ok: true, message: '已创建并切换资源库', state: getLibraryState() };
   } catch {
-    return { ok: false, message: '资源库创建失败' };
+    return { ok: false, message: '资源库创建失败', state: getLibraryState() };
   }
 }
 
@@ -199,18 +401,28 @@ async function addLibraryShell(): Promise<PicFlowLibraryActionResult> {
     title: '添加 PicFlow 资源库',
     properties: ['openDirectory']
   });
-  if (result.canceled || !result.filePaths[0]) return { ok: false, message: '已取消添加资源库' };
+  if (result.canceled || !result.filePaths[0]) return { ok: false, message: '已取消添加资源库', state: getLibraryState() };
 
-  const manifestPath = join(result.filePaths[0], 'picflow-library.json');
-  if (!existsSync(manifestPath)) return { ok: false, message: '这不是有效的 PicFlow 资源库' };
-  return { ok: true, message: '已识别资源库，真实切换功能将在下一步实现' };
+  const manifest = readManifest(result.filePaths[0]);
+  if (!manifest) return { ok: false, message: '这不是有效的 PicFlow 资源库', state: getLibraryState() };
+  const summary = ensureLibraryStructure(result.filePaths[0], manifest.name);
+  updateRecentLibrary(summary);
+  return { ok: true, message: '已切换资源库', state: getLibraryState() };
+}
+
+function switchLibrary(root: string): PicFlowLibraryActionResult {
+  const manifest = readManifest(root);
+  if (!manifest) return { ok: false, message: '资源库不存在或无效', state: getLibraryState() };
+  updateRecentLibrary({ name: manifest.name, path: root, lastOpenedAt: new Date().toISOString() });
+  return { ok: true, message: '已切换资源库', state: getLibraryState() };
 }
 
 async function openLibraryLocation(): Promise<PicFlowLibraryActionResult> {
-  ensureStorage();
-  const error = await shell.openPath(dataDir());
-  if (error) return { ok: false, message: '暂未找到资源库位置' };
-  return { ok: true, message: '已打开资源库位置' };
+  const libraryPath = getCurrentLibraryPath();
+  if (!libraryPath) return { ok: false, message: '暂未找到资源库位置', state: getLibraryState() };
+  const error = await shell.openPath(libraryPath);
+  if (error) return { ok: false, message: '暂未找到资源库位置', state: getLibraryState() };
+  return { ok: true, message: '已打开资源库位置', state: getLibraryState() };
 }
 
 function createWindow(): void {
@@ -244,29 +456,38 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
-  ensureStorage();
 
   ipcMain.handle('picflow:load-data', () => readData());
   ipcMain.handle('picflow:save-data', (_event, data: PicFlowData) => writeData(data));
-  ipcMain.handle('picflow:get-storage-info', () => ({ dataPath: dataPath(), imageDir: imageDir() }));
-  ipcMain.handle('picflow:select-images', async () => {
+  ipcMain.handle('picflow:get-storage-info', () => {
+    const libraryPath = getCurrentLibraryPath();
+    return {
+      dataPath: libraryPath ? worksPath(libraryPath) : '',
+      imageDir: libraryPath ? assetsDir(libraryPath) : ''
+    };
+  });
+  ipcMain.handle('picflow:select-images', async (_event, target: 'asset' | 'reference' = 'asset') => {
     const result = await dialog.showOpenDialog({
       title: '导入图片',
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'] }]
     });
     if (result.canceled) return [];
-    return result.filePaths.map(copyImageToLibrary);
+    return result.filePaths.map((filePath) => copyImageToLibrary(filePath, target));
   });
-  ipcMain.handle('picflow:import-image-paths', (_event, filePaths: string[]) => filePaths.map(copyImageToLibrary));
-  ipcMain.handle('picflow:save-data-url-image', (_event, dataUrl: string, name?: string) => saveDataUrlImage(dataUrl, name));
+  ipcMain.handle('picflow:import-image-paths', (_event, filePaths: string[], target: 'asset' | 'reference' = 'asset') => filePaths.map((filePath) => copyImageToLibrary(filePath, target)));
+  ipcMain.handle('picflow:save-data-url-image', (_event, dataUrl: string, name?: string, target: 'asset' | 'reference' = 'asset') => saveDataUrlImage(dataUrl, name, target));
   ipcMain.handle('picflow:copy-image', (_event, image: PicFlowImage) => copyImageToClipboard(image));
   ipcMain.handle('picflow:open-external', (_event, url: string) => {
     if (url) shell.openExternal(url);
   });
+  ipcMain.handle('library:get-current', () => getLibraryState());
+  ipcMain.handle('library:setup-default', () => setupDefaultLibrary());
+  ipcMain.handle('library:choose-custom', () => chooseCustomLibrary());
   ipcMain.handle('library:create', () => createLibraryShell());
   ipcMain.handle('library:add', () => addLibraryShell());
   ipcMain.handle('library:open-location', () => openLibraryLocation());
+  ipcMain.handle('library:switch', (_event, root: string) => switchLibrary(root));
   ipcMain.handle('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });

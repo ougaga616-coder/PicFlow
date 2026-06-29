@@ -61,14 +61,16 @@ export type StorageInfo = {
   imageDir: string;
 };
 
+export type PicFlowLibraryImageTarget = 'asset' | 'reference';
+
 export type PicFlowApi = {
   loadData: () => Promise<PicFlowData>;
   saveData: (data: PicFlowData) => Promise<PicFlowData>;
   getStorageInfo: () => Promise<StorageInfo>;
-  selectImages: () => Promise<PicFlowImage[]>;
+  selectImages: (target?: PicFlowLibraryImageTarget) => Promise<PicFlowImage[]>;
   getPathForFile?: (file: File) => string;
-  importImagePaths: (filePaths: string[]) => Promise<PicFlowImage[]>;
-  saveDataUrlImage: (dataUrl: string, name?: string) => Promise<PicFlowImage>;
+  importImagePaths: (filePaths: string[], target?: PicFlowLibraryImageTarget) => Promise<PicFlowImage[]>;
+  saveDataUrlImage: (dataUrl: string, name?: string, target?: PicFlowLibraryImageTarget) => Promise<PicFlowImage>;
   copyImage: (image: PicFlowImage) => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
 };
@@ -82,12 +84,31 @@ export type PicFlowWindowApi = {
 export type PicFlowLibraryResult = {
   ok: boolean;
   message: string;
+  state?: PicFlowLibraryState;
+};
+
+export type PicFlowLibrarySummary = {
+  name: string;
+  path: string;
+  lastOpenedAt: string;
+};
+
+export type PicFlowLibraryState = {
+  ready: boolean;
+  setupRequired: boolean;
+  missing: boolean;
+  currentLibrary?: PicFlowLibrarySummary;
+  recentLibraries: PicFlowLibrarySummary[];
 };
 
 export type PicFlowLibraryApi = {
+  getCurrentLibrary: () => Promise<PicFlowLibraryState>;
+  setupDefaultLibrary: () => Promise<PicFlowLibraryResult>;
+  chooseCustomLibrary: () => Promise<PicFlowLibraryResult>;
   createLibrary: () => Promise<PicFlowLibraryResult>;
   addLibrary: () => Promise<PicFlowLibraryResult>;
   openLibraryLocation: () => Promise<PicFlowLibraryResult>;
+  switchLibrary: (path: string) => Promise<PicFlowLibraryResult>;
 };
 
 declare global {
