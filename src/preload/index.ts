@@ -22,7 +22,12 @@ contextBridge.exposeInMainWorld('picflowWindow', {
 });
 
 contextBridge.exposeInMainWorld('picflowClipboard', {
-  readText: () => ipcRenderer.invoke('picflow-clipboard:read-text')
+  readText: () => ipcRenderer.invoke('picflow-clipboard:read-text'),
+  onAppFocus: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('picflow-window:focus', listener);
+    return () => ipcRenderer.removeListener('picflow-window:focus', listener);
+  }
 });
 
 contextBridge.exposeInMainWorld('picflowLibrary', {

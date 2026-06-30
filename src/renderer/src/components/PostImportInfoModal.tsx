@@ -163,7 +163,7 @@ export function PostImportInfoModal({
 
           <section>
             <label className="field-label dark:text-neutral-400">{'\u6a21\u578b\u6807\u7b7e'}</label>
-            <div className="rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa] p-2 transition focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#484848] dark:bg-[#343434] dark:focus-within:border-[#afc7b6] dark:focus-within:ring-[#afc7b6]/20">
+            <div className="rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa] p-2 transition focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#484848] dark:bg-[#343434] dark:focus-within:border-white/35 dark:focus-within:ring-white/10">
               <div className="flex flex-wrap items-center gap-2">
                 {modelTags.map((tag) => (
                   <button

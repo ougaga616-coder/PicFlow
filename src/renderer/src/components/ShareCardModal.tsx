@@ -80,11 +80,11 @@ export function ShareCardModal({
           <button className="tool-button h-9 px-4" onClick={onClose}>
             关闭
           </button>
-          <button className="tool-button h-9 px-4" onClick={() => void handleCopy()} disabled={!canvas || Boolean(busy)}>
+          <button className="tool-button h-9 px-4" onClick={() => void handleCopy()} disabled={!canvas || Boolean(busy)} title="复制为图片">
             <Copy className="h-4 w-4" />
             复制为图片
           </button>
-          <button className="primary-button h-9 px-4" onClick={() => void handleExport()} disabled={!canvas || Boolean(busy)}>
+          <button className="primary-button h-9 px-4" onClick={() => void handleExport()} disabled={!canvas || Boolean(busy)} title="导出 PNG">
             <Download className="h-4 w-4" />
             导出 PNG
           </button>

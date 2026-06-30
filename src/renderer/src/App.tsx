@@ -37,7 +37,7 @@ type ConfirmState =
   | { type: 'reset-test-data' }
   | null;
 
-const emptyData: PicFlowData = { version: 1, cases: [], collections: [], settings: { theme: 'light', cardScale: 1.12, smartClipboardEnabled: true } };
+const emptyData: PicFlowData = { version: 1, cases: [], collections: [], settings: { theme: 'light', cardScale: 1.12 } };
 const modelPresets = ['Nano banana', 'Nano banana Pro', 'GPT Image', 'Midjourney', 'Stable Diffusion', '即梦', '可灵', 'Libli'];
 const minCardScale = 0.78;
 const maxCardScale = 1.45;
@@ -243,7 +243,6 @@ export default function App(): JSX.Element {
   const [modelOpen, setModelOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [cardScale, setCardScale] = useState(1.12);
-  const [smartClipboardEnabled, setSmartClipboardEnabled] = useState(true);
   const [galleryDragging, setGalleryDragging] = useState(false);
   const [sidePanelsCollapsed, setSidePanelsCollapsed] = useState(() => localStorage.getItem('picflow.sidePanelsCollapsed') === 'true');
   const [libraryMenuOpen, setLibraryMenuOpen] = useState(false);
@@ -270,11 +269,6 @@ export default function App(): JSX.Element {
     if (!loaded) return;
     setData((current) => ({ ...current, settings: { ...current.settings, cardScale } }));
   }, [cardScale]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    setData((current) => ({ ...current, settings: { ...current.settings, smartClipboardEnabled } }));
-  }, [smartClipboardEnabled]);
 
   useEffect(() => {
     localStorage.setItem('picflow.sidePanelsCollapsed', String(sidePanelsCollapsed));
@@ -334,7 +328,7 @@ export default function App(): JSX.Element {
 
   const selectedCase = data.cases.find((item) => item.id === selectedId) ?? null;
   const smartClipboard = useSmartClipboard({
-    enabled: smartClipboardEnabled && libraryState.ready,
+    enabled: libraryState.ready,
     selectedWork: selectedCase,
     modalOpen: Boolean(confirmState || postImportCaseId || shareCardCaseId || libraryMenuOpen),
     movingWork: Boolean(cutWorkId),
@@ -470,7 +464,6 @@ export default function App(): JSX.Element {
     setData(nextData);
     setDarkMode(nextData.settings?.theme === 'dark');
     setCardScale(nextData.settings?.cardScale ?? 1.12);
-    setSmartClipboardEnabled(nextData.settings?.smartClipboardEnabled ?? true);
     setSelectedId((current) => {
       if (options.keepSelection && current && nextData.cases.some((item) => item.id === current)) return current;
       return null;
@@ -1089,7 +1082,6 @@ export default function App(): JSX.Element {
         search={search}
         sidePanelsCollapsed={sidePanelsCollapsed}
         darkMode={darkMode}
-        smartClipboardEnabled={smartClipboardEnabled}
         libraryRefreshing={libraryRefreshing}
         libraryButtonRef={libraryButtonRef}
         windowApi={picflowWindow}
@@ -1099,12 +1091,11 @@ export default function App(): JSX.Element {
         onToggleLibraryMenu={toggleLibraryMenu}
         onRefreshLibrary={() => void refreshCurrentLibrary()}
         onToggleDarkMode={() => setDarkMode((value) => !value)}
-        onToggleSmartClipboard={() => setSmartClipboardEnabled((value) => !value)}
       />
 
       <main
         className="grid min-h-0 flex-1"
-        style={{ gridTemplateColumns: sidePanelsCollapsed ? 'minmax(620px, 1fr)' : '260px minmax(620px, 1fr) 384px' }}
+        style={{ gridTemplateColumns: sidePanelsCollapsed ? 'minmax(620px, 1fr)' : '260px minmax(620px, 1fr) 400px' }}
       >
         {!sidePanelsCollapsed && (
         <aside className="flex min-h-0 flex-col bg-[#f4f5f2] dark:bg-[#2b2b2b]">
@@ -1169,7 +1160,6 @@ export default function App(): JSX.Element {
 
         <section
           className={`min-h-0 overflow-y-auto bg-[#e6eae5] px-7 py-6 transition dark:bg-[#252525] ${galleryDragging ? 'bg-[#e1e6f3] dark:bg-[#2d2b33]' : ''}`}
-          data-smart-clipboard-safe="true"
           onWheel={handleGalleryWheel}
           onDragEnter={(event) => {
             if (isWorkCardDrag(event)) return;
@@ -1240,7 +1230,7 @@ export default function App(): JSX.Element {
         </section>
 
         {!sidePanelsCollapsed && (
-        <div className="min-h-0 bg-[#e1e6df] p-4 pl-2 dark:bg-[#282828]" data-smart-clipboard-safe="true">
+        <div className="min-h-0 bg-[#e1e6df] p-4 pl-2 dark:bg-[#282828]">
         <DetailPanel
           item={visibleSelectedCase}
           collections={data.collections}
@@ -1260,11 +1250,12 @@ export default function App(): JSX.Element {
           onClearGuideImages={(item) => setConfirmState({ type: 'clear-guides', caseId: item.id, title: displayTitle(item) })}
           onCopyGuideImage={(image) => copyImage(image, '\u57ab\u56fe')}
           onCopyMainImage={(image) => copyImage(image, '\u4e3b\u56fe')}
-          onCopyModelTags={copyModelTags}
-          onCopyWorkSummary={copyWorkSummary}
           onToggleOrganized={toggleOrganizedStatus}
           onOpenShareCard={(item) => setShareCardCaseId(item.id)}
           onCopy={copyText}
+          clipboardRequest={smartClipboard.request}
+          onSmartClipboardDismiss={smartClipboard.dismissRequest}
+          onSmartClipboardFill={fillPromptFromSmartClipboard}
           getImageSrc={getImageDisplaySrc}
         />
         </div>
@@ -1347,14 +1338,6 @@ export default function App(): JSX.Element {
       )}
 
       <Toast message={toast} />
-
-      {smartClipboard.request && (
-        <ClipboardPromptConfirm
-          request={smartClipboard.request}
-          onCancel={smartClipboard.dismissRequest}
-          onConfirm={fillPromptFromSmartClipboard}
-        />
-      )}
 
       {confirmState && <ConfirmDialog state={confirmState} onCancel={() => setConfirmState(null)} onConfirm={deleteConfirmed} />}
     </div>
@@ -1470,7 +1453,7 @@ function EmptyState({ dragging, onImport, title, description }: { dragging: bool
   return (
     <div className="flex min-h-[520px] items-center justify-center p-6">
       <div className="w-full max-w-lg px-8 py-10 text-center">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[16px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#354038] dark:text-[#afc7b6]">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[16px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#383838] dark:text-neutral-300">
           <ImagePlus className="h-7 w-7" />
         </div>
         <h3 className="text-lg font-semibold tracking-[-0.01em]">{title ?? defaultTitle}</h3>
@@ -1511,10 +1494,9 @@ function CaseCard({
   return (
     <article
       className={`group relative overflow-hidden rounded-[18px] border bg-[#fbfbfa] shadow-[0_10px_28px_rgba(23,32,28,0.055)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(23,32,28,0.09)] dark:bg-[#303030] ${
-        selected ? 'border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-[#afc7b6] dark:ring-[#afc7b6]/20' : 'border-[#d8ddd7] dark:border-[#444]'
+        selected ? 'border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-white/35 dark:ring-white/10' : 'border-[#d8ddd7] dark:border-[#444]'
       } ${selected ? 'is-selected' : ''}`}
       style={{ height: cardHeight }}
-      data-smart-clipboard-block="true"
       draggable
       onDragStart={onDragStart}
     >
@@ -1531,15 +1513,15 @@ function CaseCard({
       </button>
       <div className="card-image-overlay" />
       <div className="card-actions">
-        <IconButton active={item.favorite} label="收藏" onClick={onFavorite}>
+        <IconButton active={item.favorite} label={'\u6536\u85cf'} onClick={onFavorite}>
           <Heart className="h-4 w-4" />
         </IconButton>
-        <IconButton label="复制图片" onClick={onCopy}>
+        <IconButton label={'\u590d\u5236\u56fe\u7247'} onClick={onCopy}>
           <Copy className="h-4 w-4" />
         </IconButton>
       </div>
       <div className="card-delete-action">
-        <IconButton label="删除" subtleDanger onClick={onDelete}>
+        <IconButton label={'\u5220\u9664\u4f5c\u54c1'} subtleDanger onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
         </IconButton>
       </div>
@@ -1571,9 +1553,8 @@ function PendingCard({
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
   return (
     <article
-      className={`group relative overflow-hidden rounded-[18px] border bg-[#fbfbfa] shadow-[0_10px_28px_rgba(23,32,28,0.055)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(23,32,28,0.09)] dark:bg-[#303030] ${selected ? 'is-selected border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-[#afc7b6] dark:ring-[#afc7b6]/20' : 'border-[#d8ddd7] dark:border-[#444]'}`}
+      className={`group relative overflow-hidden rounded-[18px] border bg-[#fbfbfa] shadow-[0_10px_28px_rgba(23,32,28,0.055)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(23,32,28,0.09)] dark:bg-[#303030] ${selected ? 'is-selected border-[#8faf9b] ring-2 ring-[#8faf9b]/20 dark:border-white/35 dark:ring-white/10' : 'border-[#d8ddd7] dark:border-[#444]'}`}
       style={{ height: cardHeight }}
-      data-smart-clipboard-block="true"
       draggable
       onDragStart={onDragStart}
     >
@@ -1584,15 +1565,15 @@ function PendingCard({
       </button>
       <div className="card-image-overlay" />
       <div className="card-actions">
-        <IconButton active={item.favorite} label="收藏" onClick={onFavorite}>
+        <IconButton active={item.favorite} label={'\u6536\u85cf'} onClick={onFavorite}>
           <Heart className="h-4 w-4" />
         </IconButton>
-        <IconButton label="复制图片" onClick={onCopy}>
+        <IconButton label={'\u590d\u5236\u56fe\u7247'} onClick={onCopy}>
           <Copy className="h-4 w-4" />
         </IconButton>
       </div>
       <div className="card-delete-action">
-        <IconButton label="删除" subtleDanger onClick={onDelete}>
+        <IconButton label={'\u5220\u9664\u4f5c\u54c1'} subtleDanger onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
         </IconButton>
       </div>
@@ -1619,11 +1600,12 @@ function DetailPanel({
   onClearGuideImages,
   onCopyGuideImage,
   onCopyMainImage,
-  onCopyModelTags,
-  onCopyWorkSummary,
   onToggleOrganized,
   onOpenShareCard,
   onCopy,
+  clipboardRequest,
+  onSmartClipboardDismiss,
+  onSmartClipboardFill,
   getImageSrc
 }: {
   item: PicFlowCase | null;
@@ -1644,18 +1626,19 @@ function DetailPanel({
   onClearGuideImages: (item: PicFlowCase) => void;
   onCopyGuideImage: (image: PicFlowImage) => void;
   onCopyMainImage: (image?: PicFlowImage) => void;
-  onCopyModelTags: (item: PicFlowCase) => void;
-  onCopyWorkSummary: (item: PicFlowCase) => void;
   onToggleOrganized: (id: string) => void;
   onOpenShareCard: (item: PicFlowCase) => void;
   onCopy: (value: string | undefined, label: string) => void;
+  clipboardRequest: { workId: string; text: string; hasExistingPrompt: boolean } | null;
+  onSmartClipboardDismiss: () => void;
+  onSmartClipboardFill: () => void;
   getImageSrc: (image?: PicFlowImage) => string;
 }): JSX.Element {
   if (!item) {
     return (
     <aside className="flex h-full min-h-0 items-center justify-center rounded-[18px] border border-[#d8ddd7]/75 bg-[#f7f8f5] px-8 text-center shadow-[0_18px_50px_rgba(23,32,28,0.06)] dark:border-[#3b3b3b] dark:bg-[#2f2f2f]">
         <div>
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#354038] dark:text-[#afc7b6]">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#e8f1ea] text-[#5f7f69] dark:bg-[#383838] dark:text-neutral-300">
             <MoreHorizontal className="h-6 w-6" />
           </div>
           <h2 className="text-base font-semibold">选择一个作品</h2>
@@ -1666,6 +1649,7 @@ function DetailPanel({
   }
 
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
+  const promptClipboardRequest = clipboardRequest?.workId === item.id ? clipboardRequest : null;
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d8ddd7]/75 bg-[#f7f8f5] shadow-[0_18px_50px_rgba(23,32,28,0.06)] dark:border-[#3b3b3b] dark:bg-[#2f2f2f]">
@@ -1676,7 +1660,7 @@ function DetailPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 pb-8 pt-4">
         <section className="rounded-[16px] bg-[#eef1ec] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[#292929]">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">主图</span>
@@ -1716,22 +1700,20 @@ function DetailPanel({
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">垫图</span>
-              <div className="flex items-center gap-1">
                 {(item.referenceImages ?? []).length > 0 && (
                   <button className="h-7 rounded-lg px-2 text-xs text-stone-400 transition hover:bg-[#e9ece8] hover:text-[#9d5147] dark:text-neutral-500 dark:hover:bg-[#383838] dark:hover:text-[#d9a19a]" onClick={() => onClearGuideImages(item)}>
                     清空
                   </button>
                 )}
-                <button className="icon-button" onClick={onAddGuideImages} aria-label="添加垫图" title="添加垫图">
-                  <ImagePlus className="h-4 w-4" />
-                </button>
-              </div>
             </div>
-            {(item.referenceImages ?? []).length === 0 ? (
-              <div className="flex h-14 items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500">
-                拖拽图片到这里，或 Ctrl + V 粘贴为垫图
-              </div>
-            ) : (
+            <button
+              type="button"
+              className="mb-3 flex min-h-14 w-full items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 transition hover:border-[#bfc9bd] hover:bg-white/55 hover:text-stone-500 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500 dark:hover:border-[#5c5c5c] dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-300"
+              onClick={onAddGuideImages}
+            >
+              {'\u70b9\u51fb\u3001\u62d6\u62fd\u6216 Ctrl+V \u6dfb\u52a0\u57ab\u56fe'}
+            </button>
+            {(item.referenceImages ?? []).length > 0 && (
               <div className="grid grid-cols-4 gap-2">
                 {(item.referenceImages ?? []).map((image) => (
                   <div key={image.id} className="group relative aspect-square overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
@@ -1754,28 +1736,28 @@ function DetailPanel({
         <section className="rounded-[16px] bg-[#fbfbfa] p-3 dark:bg-[#313131]">
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">Prompt</span>
-            <button className="icon-button" onClick={() => onCopy(item.prompt, 'Prompt')} aria-label="复制" title="复制">
+            <button className="icon-button" onClick={() => onCopy(item.prompt, 'Prompt')} aria-label={'\u590d\u5236 Prompt'} title={'\u590d\u5236 Prompt'}>
               <Copy className="h-4 w-4" />
             </button>
           </div>
-          <textarea className="field-input min-h-[230px] resize-y leading-6" value={item.prompt ?? ''} onChange={(event) => onUpdate(item.id, { prompt: event.target.value })} />
+          {promptClipboardRequest && (
+            <ClipboardPromptConfirm
+              request={promptClipboardRequest}
+              onCancel={onSmartClipboardDismiss}
+              onConfirm={onSmartClipboardFill}
+            />
+          )}
+          <textarea
+            className="field-input min-h-[230px] resize-y leading-6"
+            value={item.prompt ?? ''}
+            onChange={(event) => onUpdate(item.id, { prompt: event.target.value })}
+          />
         </section>
 
-        <section className="mt-5 space-y-3 rounded-[16px] border border-[#dbe1da]/70 bg-[#eef1ec]/45 p-3 dark:border-[#3f3f3f] dark:bg-[#303030]/70">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-400 dark:text-neutral-500">{'\u751f\u6210\u4fe1\u606f'}</div>
-            <div className="flex items-center gap-1">
-              <button className="icon-button" onClick={() => onCopyModelTags(item)} aria-label={'\u590d\u5236\u6a21\u578b\u6807\u7b7e'} title={'\u590d\u5236\u6a21\u578b\u6807\u7b7e'}>
-                <Copy className="h-4 w-4" />
-              </button>
-              <button className="icon-button" onClick={() => onCopyWorkSummary(item)} aria-label={'\u590d\u5236\u4f5c\u54c1\u4fe1\u606f'} title={'\u590d\u5236\u4f5c\u54c1\u4fe1\u606f'}>
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+        <section className="mt-4 space-y-3 px-1">
           <Field label="模型标签">
             <div className="relative" data-model-combobox="true">
-              <div className="flex h-10 items-center rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#474747] dark:bg-[#343434] dark:focus-within:border-[#afc7b6] dark:focus-within:ring-[#afc7b6]/20">
+              <div className="flex h-10 items-center rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] focus-within:border-[#8faf9b] focus-within:ring-2 focus-within:ring-[#8faf9b]/20 dark:border-[#474747] dark:bg-[#343434] dark:focus-within:border-white/35 dark:focus-within:ring-white/10">
                 <input
                   className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-stone-400 dark:text-neutral-100 dark:placeholder:text-neutral-500"
                   value={modelDraft}

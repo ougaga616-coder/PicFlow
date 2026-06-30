@@ -53,7 +53,6 @@ export type PicFlowData = {
   settings?: {
     theme?: 'light' | 'dark';
     cardScale?: number;
-    smartClipboardEnabled?: boolean;
   };
 };
 
@@ -87,6 +86,7 @@ export type PicFlowWindowApi = {
 
 export type PicFlowClipboardApi = {
   readText: () => Promise<string>;
+  onAppFocus?: (callback: () => void) => () => void;
 };
 
 export type PicFlowLibraryResult = {

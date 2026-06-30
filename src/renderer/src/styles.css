@@ -50,7 +50,7 @@ select,
 .app-titlebar {
   display: grid;
   height: 56px;
-  grid-template-columns: 220px minmax(280px, 420px) auto 112px;
+  grid-template-columns: 220px minmax(280px, 420px) minmax(0, 1fr) 112px;
   align-items: center;
   column-gap: 12px;
   box-sizing: border-box;
@@ -163,15 +163,22 @@ select,
 }
 
 .dark .smart-search-input:focus {
-  border-color: #afc7b6;
-  box-shadow: 0 0 0 3px rgba(175, 199, 182, 0.16);
+  border-color: rgba(255, 255, 255, 0.34);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
 }
 
 .titlebar-actions {
   display: flex;
   align-items: center;
+  gap: 13px;
+  justify-self: end;
+  margin-right: 10px;
+}
+
+.titlebar-action-group {
+  display: flex;
+  align-items: center;
   gap: 7px;
-  justify-self: start;
 }
 
 ::-webkit-scrollbar {
@@ -201,7 +208,7 @@ select,
 }
 
 .field-input {
-  @apply w-full rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] px-3 py-2 text-sm text-ink outline-none transition placeholder:text-stone-400 hover:border-[#cbd2ca] focus:border-[#8faf9b] focus:ring-2 focus:ring-[#8faf9b]/20 dark:border-[#484848] dark:bg-[#343434] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:hover:border-[#5a5a5a] dark:focus:border-[#afc7b6] dark:focus:ring-[#afc7b6]/20;
+  @apply w-full rounded-[10px] border border-[#d7ddd6] bg-[#fbfbfa] px-3 py-2 text-sm text-ink outline-none transition placeholder:text-stone-400 hover:border-[#cbd2ca] focus:border-[#8faf9b] focus:ring-2 focus:ring-[#8faf9b]/20 dark:border-[#484848] dark:bg-[#343434] dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:hover:border-[#5a5a5a] dark:focus:border-white/35 dark:focus:ring-white/10;
 }
 
 .tool-button {
@@ -209,7 +216,7 @@ select,
 }
 
 .primary-button {
-  @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#5f7f69] px-3 text-sm font-medium text-white shadow-[0_8px_18px_rgba(95,127,105,0.18)] transition hover:bg-[#4f6f59] active:scale-[0.99] disabled:opacity-45 dark:bg-[#afc7b6] dark:text-[#232824] dark:hover:bg-[#c1d3c7];
+  @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-[#5f7f69] px-3 text-sm font-medium text-white shadow-[0_8px_18px_rgba(95,127,105,0.18)] transition hover:bg-[#4f6f59] active:scale-[0.99] disabled:opacity-45 dark:bg-[#e5e5e5] dark:text-[#202020] dark:shadow-none dark:hover:bg-[#f2f2f2];
 }
 
 .danger-button {
@@ -262,15 +269,15 @@ select,
 }
 
 .dark .toolbar-icon-button:hover {
-  border-color: rgba(175, 199, 182, 0.28);
+  border-color: rgba(255, 255, 255, 0.16);
   background: rgba(76, 76, 76, 0.9);
   color: #f4f4f4;
 }
 
 .dark .toolbar-icon-button.is-active {
-  border-color: rgba(175, 199, 182, 0.36);
-  background: rgba(175, 199, 182, 0.14);
-  color: #afc7b6;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .library-menu {
@@ -351,7 +358,7 @@ select,
 }
 
 .dark .library-menu-item:hover {
-  background: rgba(175, 199, 182, 0.12);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .dark .library-menu-item.is-danger {
@@ -428,8 +435,8 @@ select,
 }
 
 .dark .library-gate-icon {
-  background: rgba(175, 199, 182, 0.14);
-  color: #afc7b6;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .dark .library-gate-panel h2 {
@@ -547,8 +554,8 @@ select,
 }
 
 .dark .brand-logo {
-  background: linear-gradient(145deg, #d8ded7, #9eb6a7);
-  color: #202720;
+  background: linear-gradient(145deg, #eeeeee, #9a9a9a);
+  color: #202020;
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
@@ -805,12 +812,12 @@ select,
 }
 
 .dark .sidebar-row.is-active {
-  background: #3b453d;
-  color: #dbe8de;
+  background: #3a3a3a;
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .dark .sidebar-row.is-active::before {
-  background: #afc7b6;
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .dark .sidebar-row-count {
@@ -818,7 +825,7 @@ select,
 }
 
 .dark .sidebar-row.is-active .sidebar-row-count {
-  color: #afc7b6;
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .dark .sidebar-row-action {
@@ -882,9 +889,9 @@ select,
 }
 
 .card-action-button.is-active {
-  border-color: rgba(175, 199, 182, 0.38);
-  background: rgba(66, 91, 72, 0.62);
-  color: #e8f1ea;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .card-action-button.is-danger {

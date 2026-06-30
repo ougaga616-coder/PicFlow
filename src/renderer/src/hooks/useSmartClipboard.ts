@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClipboardPromptRequest } from '../components/ClipboardPromptConfirm';
 import type { PicFlowCase, PicFlowClipboardApi } from '../types';
-import { isClipboardSafeTarget } from '../utils/clipboardSafeTarget';
 
 type UseSmartClipboardOptions = {
   enabled: boolean;
@@ -12,11 +11,39 @@ type UseSmartClipboardOptions = {
   onReadError: () => void;
 };
 
+type SmartClipboardDetectResult = 'suggested' | 'empty' | 'disabled' | 'blocked' | 'duplicate' | 'error';
+
 type UseSmartClipboardResult = {
   request: ClipboardPromptRequest | null;
   dismissRequest: () => void;
   completeRequest: () => ClipboardPromptRequest | null;
+  detectNow: (options?: { manual?: boolean }) => Promise<SmartClipboardDetectResult>;
 };
+
+type ClipboardSuggestionKey = {
+  workId: string;
+  textHash: string;
+};
+
+function hashText(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return `${value.length}:${hash >>> 0}`;
+}
+
+function sameKey(left: ClipboardSuggestionKey | null, right: ClipboardSuggestionKey): boolean {
+  return Boolean(left && left.workId === right.workId && left.textHash === right.textHash);
+}
+
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(
+    element?.matches('input, textarea, select') ||
+      element?.closest('[contenteditable="true"]')
+  );
+}
 
 export function useSmartClipboard({
   enabled,
@@ -27,7 +54,9 @@ export function useSmartClipboard({
   onReadError
 }: UseSmartClipboardOptions): UseSmartClipboardResult {
   const [request, setRequest] = useState<ClipboardPromptRequest | null>(null);
-  const lastDismissedTextRef = useRef('');
+  const lastDismissedRef = useRef<ClipboardSuggestionKey | null>(null);
+  const lastSuggestedRef = useRef<ClipboardSuggestionKey | null>(null);
+  const consumedClipboardTextHashRef = useRef<string | null>(null);
   const readingRef = useRef(false);
 
   useEffect(() => {
@@ -35,45 +64,93 @@ export function useSmartClipboard({
   }, [enabled]);
 
   useEffect(() => {
-    const onClick = async (event: MouseEvent) => {
-      if (!enabled || !selectedWork || modalOpen || movingWork || request) return;
-      if (!isClipboardSafeTarget(event.target)) return;
-      if (!clipboardApi?.readText || readingRef.current) return;
+    if (!selectedWork || !request) return;
+    if (request.workId !== selectedWork.id || request.text === (selectedWork.prompt ?? '').trim()) {
+      setRequest(null);
+    }
+  }, [request, selectedWork]);
 
-      readingRef.current = true;
-      try {
-        const rawText = await clipboardApi.readText();
-        const text = rawText.trim();
-        if (!text) return;
-        if (text === (selectedWork.prompt ?? '').trim()) return;
-        if (text === lastDismissedTextRef.current) return;
-        setRequest({
-          workId: selectedWork.id,
-          text,
-          hasExistingPrompt: Boolean((selectedWork.prompt ?? '').trim())
-        });
-      } catch {
-        onReadError();
-      } finally {
-        readingRef.current = false;
-      }
+  const detectNow = useCallback(async ({ manual = false }: { manual?: boolean } = {}): Promise<SmartClipboardDetectResult> => {
+    if (!enabled) return 'disabled';
+    if (!selectedWork || modalOpen || movingWork || !clipboardApi?.readText) return 'blocked';
+    if (!manual && isTextEditingTarget(document.activeElement)) return 'blocked';
+    if (readingRef.current) return 'blocked';
+
+    readingRef.current = true;
+    try {
+      const rawText = await clipboardApi.readText();
+      const text = rawText.trim();
+      if (!text) return 'empty';
+      const textHash = hashText(text);
+      if (textHash === consumedClipboardTextHashRef.current) return 'duplicate';
+      if (text === (selectedWork.prompt ?? '').trim()) return 'duplicate';
+
+      const suggestionKey = { workId: selectedWork.id, textHash };
+      if (!manual && sameKey(lastDismissedRef.current, suggestionKey)) return 'duplicate';
+      if (!manual && sameKey(lastSuggestedRef.current, suggestionKey)) return 'duplicate';
+
+      lastSuggestedRef.current = suggestionKey;
+      setRequest({
+        workId: selectedWork.id,
+        text,
+        hasExistingPrompt: Boolean((selectedWork.prompt ?? '').trim())
+      });
+      return 'suggested';
+    } catch {
+      onReadError();
+      return 'error';
+    } finally {
+      readingRef.current = false;
+    }
+  }, [clipboardApi, enabled, modalOpen, movingWork, onReadError, selectedWork]);
+
+  useEffect(() => {
+    let timer = 0;
+    const scheduleDetect = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void detectNow();
+      }, 120);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') scheduleDetect();
     };
 
-    window.addEventListener('click', onClick);
-    return () => window.removeEventListener('click', onClick);
-  }, [clipboardApi, enabled, modalOpen, movingWork, onReadError, request, selectedWork]);
+    window.addEventListener('focus', scheduleDetect);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    const removeAppFocusListener = clipboardApi?.onAppFocus?.(scheduleDetect);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', scheduleDetect);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      removeAppFocusListener?.();
+    };
+  }, [clipboardApi, detectNow]);
+
+  useEffect(() => {
+    if (!selectedWork?.id) return;
+    const timer = window.setTimeout(() => {
+      void detectNow();
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [detectNow, selectedWork?.id]);
 
   const dismissRequest = () => {
-    if (request) lastDismissedTextRef.current = request.text;
+    if (request) lastDismissedRef.current = { workId: request.workId, textHash: hashText(request.text) };
     setRequest(null);
   };
 
   const completeRequest = () => {
     const current = request;
-    if (current) lastDismissedTextRef.current = '';
+    if (current) {
+      const textHash = hashText(current.text);
+      lastDismissedRef.current = null;
+      lastSuggestedRef.current = { workId: current.workId, textHash };
+      consumedClipboardTextHashRef.current = textHash;
+    }
     setRequest(null);
     return current;
   };
 
-  return { request, dismissRequest, completeRequest };
+  return { request, dismissRequest, completeRequest, detectNow };
 }

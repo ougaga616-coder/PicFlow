@@ -73,7 +73,6 @@ type PicFlowData = {
   settings?: {
     theme?: 'light' | 'dark';
     cardScale?: number;
-    smartClipboardEnabled?: boolean;
   };
 };
 
@@ -129,8 +128,7 @@ type PicFlowLibraryLoadResult = {
 
 const defaultSettings = (): NonNullable<PicFlowData['settings']> => ({
   theme: 'light',
-  cardScale: 1.12,
-  smartClipboardEnabled: true
+  cardScale: 1.12
 });
 const emptyData = (): PicFlowData => ({ version: 1, cases: [], collections: [], settings: defaultSettings() });
 const emptyConfig = (): PicFlowAppConfig => ({ recentLibraries: [] });
@@ -700,6 +698,10 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.on('focus', () => {
+    mainWindow?.webContents.send('picflow-window:focus');
   });
 }
 
