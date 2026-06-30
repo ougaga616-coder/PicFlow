@@ -1,9 +1,21 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, shell } from 'electron';
 import { cpSync, existsSync, mkdirSync, readFileSync, copyFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 type PicFlowCaptureMethod = 'manual' | 'local-import' | 'drag-drop' | 'clipboard-paste' | 'url-paste';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'picflow-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true
+    }
+  }
+]);
 
 type PicFlowImage = {
   id: string;
@@ -606,6 +618,21 @@ function backupAndResetTestData(): PicFlowLibraryActionResult {
   }
 }
 
+function registerImageProtocol(): void {
+  protocol.handle('picflow-file', (request) => {
+    try {
+      const url = new URL(request.url);
+      const filePath = url.searchParams.get('path');
+      if (!filePath || !existsSync(filePath)) {
+        return new Response('Not found', { status: 404 });
+      }
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Invalid image path', { status: 400 });
+    }
+  });
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -637,6 +664,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  registerImageProtocol();
 
   ipcMain.handle('picflow:load-data', () => readData());
   ipcMain.handle('picflow:save-data', (_event, data: PicFlowData) => writeData(data));

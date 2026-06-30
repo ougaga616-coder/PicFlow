@@ -25,6 +25,7 @@ import {
 import { ClipboardEvent as ReactClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { PostImportInfoModal, type PostImportInfoPayload } from './components/PostImportInfoModal';
 import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage, PicFlowLibraryApi, PicFlowLibraryState } from './types';
+import { imageDisplaySrc } from './utils/imageDisplay';
 import { formatModelTagsForCopy, formatWorkSummaryForCopy } from './utils/workCopy';
 import { matchesWorkSearch } from './utils/workSearch';
 
@@ -151,11 +152,8 @@ function createCase(partial: Partial<PicFlowCase> = {}): PicFlowCase {
   };
 }
 
-function imageSrc(image?: PicFlowImage): string {
-  if (!image) return '';
-  if (image.url) return image.url;
-  if (!image.localPath) return '';
-  return `file:///${image.localPath.replace(/\\/g, '/')}`;
+function imageSrc(image?: PicFlowImage, libraryPath?: string): string {
+  return imageDisplaySrc(image, libraryPath);
 }
 
 function coverImage(item: PicFlowCase): PicFlowImage | undefined {
@@ -1026,6 +1024,7 @@ export default function App(): JSX.Element {
   const cardWidth = Math.round(200 * cardScale);
   const cardHeight = Math.round(260 * cardScale);
   const cardGap = Math.round(18 * cardScale);
+  const getImageDisplaySrc = (image?: PicFlowImage) => imageSrc(image, libraryState.currentLibrary?.path);
 
   return (
     <div
@@ -1203,6 +1202,7 @@ export default function App(): JSX.Element {
                   onDelete={() => setConfirmState({ type: 'case', id: item.id, title: displayTitle(item) })}
                   onDragStart={(event) => handleWorkCardDragStart(event, item.id)}
                   cardHeight={cardHeight}
+                  getImageSrc={getImageDisplaySrc}
                 />
               ))}
             </div>
@@ -1219,6 +1219,7 @@ export default function App(): JSX.Element {
                   onDelete={() => setConfirmState({ type: 'case', id: item.id, title: displayTitle(item) })}
                   onDragStart={(event) => handleWorkCardDragStart(event, item.id)}
                   cardHeight={cardHeight}
+                  getImageSrc={getImageDisplaySrc}
                 />
               ))}
             </div>
@@ -1250,6 +1251,7 @@ export default function App(): JSX.Element {
           onCopyWorkSummary={copyWorkSummary}
           onToggleOrganized={toggleOrganizedStatus}
           onCopy={copyText}
+          getImageSrc={getImageDisplaySrc}
         />
         </div>
         )}
@@ -1309,8 +1311,8 @@ export default function App(): JSX.Element {
           item={postImportCase}
           collections={data.collections}
           modelPresets={modelPresets}
-          coverSrc={imageSrc(coverImage(postImportCase))}
-          getImageSrc={imageSrc}
+          coverSrc={getImageDisplaySrc(coverImage(postImportCase))}
+          getImageSrc={getImageDisplaySrc}
           onSkip={skipPostImportInfo}
           onSave={(payload) => savePostImportInfo(postImportCase.id, payload)}
           onAddGuideImages={() => addGuideImagesToImportedCase(postImportCase.id)}
@@ -1475,7 +1477,8 @@ function CaseCard({
   onFavorite,
   onDelete,
   onDragStart,
-  cardHeight
+  cardHeight,
+  getImageSrc
 }: {
   item: PicFlowCase;
   selected: boolean;
@@ -1485,6 +1488,7 @@ function CaseCard({
   onDelete: () => void;
   onDragStart: (event: DragEvent<HTMLElement>) => void;
   cardHeight: number;
+  getImageSrc: (image?: PicFlowImage) => string;
 }): JSX.Element {
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
   return (
@@ -1499,7 +1503,7 @@ function CaseCard({
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-[#eef0ed] dark:bg-[#383838]">
           {cover ? (
-            <img className="h-full w-full object-cover" src={imageSrc(cover)} alt={displayTitle(item)} loading="lazy" />
+            <img className="h-full w-full object-cover" src={getImageSrc(cover)} alt={displayTitle(item)} loading="lazy" />
           ) : (
             <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500">
               <ImagePlus className="h-9 w-9" />
@@ -1533,7 +1537,8 @@ function PendingCard({
   onFavorite,
   onDelete,
   onDragStart,
-  cardHeight
+  cardHeight,
+  getImageSrc
 }: {
   item: PicFlowCase;
   selected: boolean;
@@ -1543,6 +1548,7 @@ function PendingCard({
   onDelete: () => void;
   onDragStart: (event: DragEvent<HTMLElement>) => void;
   cardHeight: number;
+  getImageSrc: (image?: PicFlowImage) => string;
 }): JSX.Element {
   const cover = item.images.find((image) => image.id === item.coverImageId) ?? item.images[0];
   return (
@@ -1554,7 +1560,7 @@ function PendingCard({
     >
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-stone-100 dark:bg-neutral-800">
-          {cover ? <img className="h-full w-full object-cover" src={imageSrc(cover)} alt={displayTitle(item)} loading="lazy" /> : <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500"><ImagePlus className="h-9 w-9" /></div>}
+          {cover ? <img className="h-full w-full object-cover" src={getImageSrc(cover)} alt={displayTitle(item)} loading="lazy" /> : <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500"><ImagePlus className="h-9 w-9" /></div>}
         </div>
       </button>
       <div className="card-image-overlay" />
@@ -1597,7 +1603,8 @@ function DetailPanel({
   onCopyModelTags,
   onCopyWorkSummary,
   onToggleOrganized,
-  onCopy
+  onCopy,
+  getImageSrc
 }: {
   item: PicFlowCase | null;
   collections: PicFlowCollection[];
@@ -1621,6 +1628,7 @@ function DetailPanel({
   onCopyWorkSummary: (item: PicFlowCase) => void;
   onToggleOrganized: (id: string) => void;
   onCopy: (value: string | undefined, label: string) => void;
+  getImageSrc: (image?: PicFlowImage) => string;
 }): JSX.Element {
   if (!item) {
     return (
@@ -1666,7 +1674,7 @@ function DetailPanel({
             onDrop={(event) => onMainImageDrop(event, item)}
           >
             {cover ? (
-              <img className="h-full w-full object-contain" src={imageSrc(cover)} alt={displayTitle(item)} />
+              <img className="h-full w-full object-contain" src={getImageSrc(cover)} alt={displayTitle(item)} />
             ) : (
               <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500">
                 <ImagePlus className="h-10 w-10" />
@@ -1706,7 +1714,7 @@ function DetailPanel({
               <div className="grid grid-cols-4 gap-2">
                 {(item.referenceImages ?? []).map((image) => (
                   <div key={image.id} className="group relative aspect-square overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
-                    <img className="h-full w-full object-cover" src={imageSrc(image)} alt={image.name ?? '垫图'} />
+                    <img className="h-full w-full object-cover" src={getImageSrc(image)} alt={image.name ?? '垫图'} />
                     <div className="absolute inset-x-1 bottom-1 flex justify-end gap-1 opacity-0 transition group-hover:opacity-100">
                       <button className="icon-button h-7 w-7" onClick={() => onCopyGuideImage(image)} aria-label="复制垫图" title="复制垫图">
                         <Copy className="h-3.5 w-3.5" />

@@ -124,9 +124,8 @@ export function PostImportInfoModal({
           <section>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">{'\u57ab\u56fe'}</span>
-              <button className="tool-button h-8 px-3 text-xs" onClick={() => void onAddGuideImages()} aria-label="添加垫图" title="添加垫图">
-                <Plus className="h-3.5 w-3.5" />
-                {'\u6dfb\u52a0\u57ab\u56fe'}
+              <button className="toolbar-icon-button h-8 w-8" onClick={() => void onAddGuideImages()} aria-label="添加垫图" title="添加垫图">
+                <ImagePlus className="h-3.5 w-3.5" />
               </button>
             </div>
             {(item.referenceImages ?? []).length === 0 ? (
@@ -192,7 +191,6 @@ export function PostImportInfoModal({
                 <datalist id="post-import-model-presets">
                   {modelPresets.map((tag) => <option key={tag} value={tag} />)}
                 </datalist>
-                <button className="tool-button h-8 px-3 text-xs" onClick={() => addModelTag()}>{'\u6dfb\u52a0'}</button>
               </div>
             </div>
           </section>
