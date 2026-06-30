@@ -17,6 +17,7 @@ import {
 import { ClipboardEvent as ReactClipboardEvent, DragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppTitlebar } from './components/AppTitlebar';
 import { PostImportInfoModal, type PostImportInfoPayload } from './components/PostImportInfoModal';
+import { ShareCardModal } from './components/ShareCardModal';
 import { Toast } from './components/Toast';
 import type { PicFlowCase, PicFlowCollection, PicFlowData, PicFlowImage, PicFlowLibraryApi, PicFlowLibraryState } from './types';
 import { resolveWorkImageSrc } from './utils/imageDisplay';
@@ -71,6 +72,20 @@ const picflowApi = window.picflow ?? {
     const src = image.url ?? (image.localPath ? `file:///${image.localPath.replace(/\\/g, '/')}` : '');
     if (!src || !navigator.clipboard || !('ClipboardItem' in window)) return false;
     const response = await fetch(src);
+    const blob = await response.blob();
+    await navigator.clipboard.write([new (window as unknown as { ClipboardItem: typeof ClipboardItem }).ClipboardItem({ [blob.type]: blob })]);
+    return true;
+  },
+  exportShareCardPng: async (dataUrl: string) => {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'picflow-share-card.png';
+    link.click();
+    return true;
+  },
+  copyShareCardPng: async (dataUrl: string) => {
+    if (!navigator.clipboard || !('ClipboardItem' in window)) return false;
+    const response = await fetch(dataUrl);
     const blob = await response.blob();
     await navigator.clipboard.write([new (window as unknown as { ClipboardItem: typeof ClipboardItem }).ClipboardItem({ [blob.type]: blob })]);
     return true;
@@ -226,6 +241,7 @@ export default function App(): JSX.Element {
   const [libraryRefreshing, setLibraryRefreshing] = useState(false);
   const [cutWorkId, setCutWorkId] = useState<string | null>(null);
   const [postImportCaseId, setPostImportCaseId] = useState<string | null>(null);
+  const [shareCardCaseId, setShareCardCaseId] = useState<string | null>(null);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
   const suppressSaveRef = useRef(false);
 
@@ -363,6 +379,7 @@ export default function App(): JSX.Element {
 
   const visibleSelectedCase = selectedId ? visibleCases.find((item) => item.id === selectedId) ?? null : null;
   const postImportCase = postImportCaseId ? data.cases.find((item) => item.id === postImportCaseId) ?? null : null;
+  const shareCardCase = shareCardCaseId ? data.cases.find((item) => item.id === shareCardCaseId) ?? null : null;
   const visibleRecentLibraries = useMemo(() => {
     const seen = new Set<string>();
     const currentPath = libraryState.currentLibrary?.path;
@@ -1020,6 +1037,7 @@ export default function App(): JSX.Element {
   const cardHeight = Math.round(260 * cardScale);
   const cardGap = Math.round(18 * cardScale);
   const getImageDisplaySrc = (image?: PicFlowImage) => imageSrc(image, libraryState.currentLibrary?.path);
+  const getReferenceImageDisplaySrc = (image?: PicFlowImage) => imageSrc(image, libraryState.currentLibrary?.path);
 
   return (
     <div
@@ -1203,6 +1221,7 @@ export default function App(): JSX.Element {
           onCopyModelTags={copyModelTags}
           onCopyWorkSummary={copyWorkSummary}
           onToggleOrganized={toggleOrganizedStatus}
+          onOpenShareCard={(item) => setShareCardCaseId(item.id)}
           onCopy={copyText}
           getImageSrc={getImageDisplaySrc}
         />
@@ -1271,6 +1290,17 @@ export default function App(): JSX.Element {
           onAddGuideImages={() => addGuideImagesToImportedCase(postImportCase.id)}
           onGuidePaste={(event) => handleGuidePaste(event, postImportCase.id)}
           onRemoveGuideImage={removeGuideImage}
+        />
+      )}
+
+      {shareCardCase && (
+        <ShareCardModal
+          item={shareCardCase}
+          api={picflowApi}
+          getWorkImageSrc={getImageDisplaySrc}
+          getReferenceImageSrc={getReferenceImageDisplaySrc}
+          onClose={() => setShareCardCaseId(null)}
+          onToast={setToast}
         />
       )}
 
@@ -1540,6 +1570,7 @@ function DetailPanel({
   onCopyModelTags,
   onCopyWorkSummary,
   onToggleOrganized,
+  onOpenShareCard,
   onCopy,
   getImageSrc
 }: {
@@ -1564,6 +1595,7 @@ function DetailPanel({
   onCopyModelTags: (item: PicFlowCase) => void;
   onCopyWorkSummary: (item: PicFlowCase) => void;
   onToggleOrganized: (id: string) => void;
+  onOpenShareCard: (item: PicFlowCase) => void;
   onCopy: (value: string | undefined, label: string) => void;
   getImageSrc: (image?: PicFlowImage) => string;
 }): JSX.Element {
@@ -1777,6 +1809,9 @@ function DetailPanel({
         </section>
       </div>
       <div className="border-t border-[#dde2dc] bg-[#fbfbf8]/95 p-4 dark:border-[#3b3b3b] dark:bg-[#303030]/95">
+          <button className="tool-button mb-2 w-full justify-center" onClick={() => onOpenShareCard(item)}>
+            生成分享卡
+          </button>
           <button className="primary-button mb-2 w-full" onClick={() => onToggleOrganized(item.id)}>
             <Check className="h-4 w-4" />
             {item.status === 'pending' ? '\u6574\u7406\u5b8c\u6210' : '\u6807\u8bb0\u4e3a\u5f85\u6574\u7406'}

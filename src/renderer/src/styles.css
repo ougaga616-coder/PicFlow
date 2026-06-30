@@ -896,3 +896,22 @@ select,
   width: 16px;
   height: 16px;
 }
+
+.share-card-preview-shell {
+  display: flex;
+  min-height: 0;
+  justify-content: center;
+}
+
+.share-card-preview-canvas {
+  display: block;
+  width: min(100%, 360px);
+  height: auto;
+  border-radius: 18px;
+  background: #f7f8f4;
+  box-shadow: 0 24px 70px rgba(23, 32, 28, 0.18);
+}
+
+.dark .share-card-preview-canvas {
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}

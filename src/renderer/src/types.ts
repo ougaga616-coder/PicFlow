@@ -73,6 +73,8 @@ export type PicFlowApi = {
   saveDataUrlImage: (dataUrl: string, name?: string, target?: PicFlowLibraryImageTarget) => Promise<PicFlowImage>;
   saveUrlImage: (url: string) => Promise<PicFlowImage>;
   copyImage: (image: PicFlowImage) => Promise<boolean>;
+  exportShareCardPng: (dataUrl: string, defaultName?: string) => Promise<boolean>;
+  copyShareCardPng: (dataUrl: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
 };
 

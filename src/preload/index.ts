@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('picflow', {
   saveDataUrlImage: (dataUrl: string, name?: string, target?: 'asset' | 'reference') => ipcRenderer.invoke('picflow:save-data-url-image', dataUrl, name, target),
   saveUrlImage: (url: string) => ipcRenderer.invoke('picflow:save-url-image', url),
   copyImage: (image: unknown) => ipcRenderer.invoke('picflow:copy-image', image),
+  exportShareCardPng: (dataUrl: string, defaultName?: string) => ipcRenderer.invoke('picflow:export-share-card-png', dataUrl, defaultName),
+  copyShareCardPng: (dataUrl: string) => ipcRenderer.invoke('picflow:copy-share-card-png', dataUrl),
   openExternal: (url: string) => ipcRenderer.invoke('picflow:open-external', url)
 });
 

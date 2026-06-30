@@ -521,6 +521,33 @@ function copyImageToClipboard(image: PicFlowImage): boolean {
   return true;
 }
 
+function imageFromDataUrl(dataUrl: string): Electron.NativeImage {
+  if (!dataUrl.startsWith('data:image/png;base64,')) return nativeImage.createEmpty();
+  return nativeImage.createFromDataURL(dataUrl);
+}
+
+function copyShareCardPngToClipboard(dataUrl: string): boolean {
+  const image = imageFromDataUrl(dataUrl);
+  if (image.isEmpty()) return false;
+  clipboard.writeImage(image);
+  return true;
+}
+
+async function exportShareCardPng(dataUrl: string, defaultName = 'picflow-share-card.png'): Promise<boolean> {
+  const image = imageFromDataUrl(dataUrl);
+  if (image.isEmpty()) return false;
+
+  const result = await dialog.showSaveDialog({
+    title: '导出分享卡',
+    defaultPath: defaultName,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }]
+  });
+  if (result.canceled || !result.filePath) return false;
+
+  writeFileSync(result.filePath, image.toPNG());
+  return true;
+}
+
 function setCurrentLibrary(root: string): PicFlowLibrarySummary {
   const summary = ensureLibraryStructure(root, libraryNameFromPath(root));
   updateRecentLibrary(summary);
@@ -696,6 +723,8 @@ app.whenReady().then(() => {
   ipcMain.handle('picflow:save-data-url-image', (_event, dataUrl: string, name?: string, target: 'asset' | 'reference' = 'asset') => saveDataUrlImage(dataUrl, name, target));
   ipcMain.handle('picflow:save-url-image', (_event, url: string) => saveUrlImage(url));
   ipcMain.handle('picflow:copy-image', (_event, image: PicFlowImage) => copyImageToClipboard(image));
+  ipcMain.handle('picflow:export-share-card-png', (_event, dataUrl: string, defaultName?: string) => exportShareCardPng(dataUrl, defaultName));
+  ipcMain.handle('picflow:copy-share-card-png', (_event, dataUrl: string) => copyShareCardPngToClipboard(dataUrl));
   ipcMain.handle('picflow:open-external', (_event, url: string) => {
     if (url) shell.openExternal(url);
   });
