@@ -17,6 +17,14 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-gpu-rasterization');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+app.commandLine.appendSwitch('disable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
+
 type PicFlowImage = {
   id: string;
   url?: string;
