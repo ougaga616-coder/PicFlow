@@ -2188,13 +2188,15 @@ function DetailPanel({
                   </button>
                 )}
             </div>
-            <button
-              type="button"
-              className="mb-3 flex min-h-14 w-full items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 transition hover:border-[#bfc9bd] hover:bg-white/55 hover:text-stone-500 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500 dark:hover:border-[#5c5c5c] dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-300"
-              onClick={onAddGuideImages}
-            >
-              {'\u70b9\u51fb\u3001\u62d6\u62fd\u6216 Ctrl+V \u6dfb\u52a0\u57ab\u56fe'}
-            </button>
+            {(item.referenceImages ?? []).length === 0 && (
+              <button
+                type="button"
+                className="flex min-h-14 w-full items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 transition hover:border-[#bfc9bd] hover:bg-white/55 hover:text-stone-500 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500 dark:hover:border-[#5c5c5c] dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-300"
+                onClick={onAddGuideImages}
+              >
+                {'\u70b9\u51fb\u3001\u62d6\u62fd\u6216 Ctrl+V \u6dfb\u52a0\u57ab\u56fe'}
+              </button>
+            )}
             {(item.referenceImages ?? []).length > 0 && (
               <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2.5">
                 {(item.referenceImages ?? []).map((image) => (
