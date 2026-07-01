@@ -1624,12 +1624,14 @@ export default function App(): JSX.Element {
           </div>
 
           {clipboardImageRequest && (
-            <ClipboardImageConfirm
-              hasSelectedWork={Boolean(selectedCase)}
-              onCreateWork={() => void createWorkFromClipboardImage()}
-              onAddGuide={() => void addClipboardImageAsGuide()}
-              onDismiss={dismissClipboardImageRequest}
-            />
+            <div className="sticky top-3 z-40 mx-auto mb-4 w-full max-w-[520px]">
+              <ClipboardImageConfirm
+                hasSelectedWork={Boolean(selectedCase)}
+                onCreateWork={() => void createWorkFromClipboardImage()}
+                onAddGuide={() => void addClipboardImageAsGuide()}
+                onDismiss={dismissClipboardImageRequest}
+              />
+            </div>
           )}
 
           {visibleCases.length === 0 ? (
@@ -1820,7 +1822,7 @@ function ClipboardImageConfirm({
   onDismiss: () => void;
 }): JSX.Element {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa]/86 px-3 py-2.5 shadow-[0_10px_28px_rgba(23,32,28,0.08)] backdrop-blur dark:border-[#424242] dark:bg-[#303030]/92 dark:shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa]/86 px-3 py-2.5 shadow-[0_10px_28px_rgba(23,32,28,0.08)] backdrop-blur dark:border-[#424242] dark:bg-[#303030]/92 dark:shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
       <div>
         <div className="text-xs font-semibold text-stone-700 dark:text-neutral-100">检测到剪贴板图片</div>
         <div className="mt-0.5 text-xs text-stone-500 dark:text-neutral-400">选择如何使用这张图片</div>
