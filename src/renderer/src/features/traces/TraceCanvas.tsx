@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import {
   DragEvent as ReactDragEvent,
   KeyboardEvent,
@@ -25,11 +25,14 @@ type TraceCanvasProps = {
   onPasteImageNode: (file: File, x: number, y: number) => Promise<string | null>;
   onUpdateTextNode: (nodeId: string, text: string, options?: { removeIfEmpty?: boolean }) => void;
   onMoveNode: (nodeId: string, x: number, y: number) => void;
+  onMoveNodes: (positions: Array<{ id: string; x: number; y: number }>) => void;
   onDeleteNode: (nodeId: string) => void;
+  onDeleteNodes: (nodeIds: string[]) => void;
   onCreateEdge: (fromNodeId: string, toNodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onUndo: () => boolean;
   onRedo: () => boolean;
+  onExportPng: (dataUrl: string, fileName: string) => Promise<boolean>;
   libraryPath?: string;
 };
 
@@ -40,6 +43,7 @@ type DragState = {
   startX: number;
   startY: number;
   moved: boolean;
+  group: Array<{ nodeId: string; startX: number; startY: number }>;
 };
 
 type ConnectionState = {
@@ -60,6 +64,15 @@ type PanState = {
   moved: boolean;
 };
 
+type SelectionState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  moved: boolean;
+};
+
 type NodeBox = {
   x: number;
   y: number;
@@ -72,6 +85,7 @@ const pasteOffset = 32;
 const minScale = 0.4;
 const maxScale = 2;
 const scaleStep = 0.08;
+const exportPadding = 100;
 
 export function TraceCanvas({
   trace,
@@ -83,11 +97,14 @@ export function TraceCanvas({
   onPasteImageNode,
   onUpdateTextNode,
   onMoveNode,
+  onMoveNodes,
   onDeleteNode,
+  onDeleteNodes,
   onCreateEdge,
   onDeleteEdge,
   onUndo,
   onRedo,
+  onExportPng,
   libraryPath
 }: TraceCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -96,7 +113,9 @@ export function TraceCanvas({
   const skipNodeBlurSaveRef = useRef(false);
   const dragRef = useRef<DragState | null>(null);
   const panRef = useRef<PanState | null>(null);
+  const selectionRef = useRef<SelectionState | null>(null);
   const suppressNextCanvasClickRef = useRef(false);
+  const suppressNextNodeClickRef = useRef(false);
   const lastCanvasPointRef = useRef<{ x: number; y: number } | null>(null);
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(trace.title);
@@ -105,18 +124,22 @@ export function TraceCanvas({
   const [editingOriginalText, setEditingOriginalText] = useState('');
   const [newEditingNodeId, setNewEditingNodeId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [dragPreview, setDragPreview] = useState<{ nodeId: string; x: number; y: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<Record<string, { x: number; y: number }> | null>(null);
+  const [selectionBox, setSelectionBox] = useState<SelectionState | null>(null);
   const [copiedNode, setCopiedNode] = useState<Pick<TextTraceNode, 'text' | 'width' | 'x' | 'y'> | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [viewport, setViewport] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
   const [spacePressed, setSpacePressed] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const canvasNodes = useMemo(
     () => trace.nodes.filter((node): node is CanvasNode => node.type === 'text' || node.type === 'image'),
     [trace.nodes]
   );
+  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const nodeIds = useMemo(() => new Set(canvasNodes.map((node) => node.id)), [canvasNodes]);
   const validEdges = useMemo(
     () => trace.edges.filter((edge): edge is TraceEdge => nodeIds.has(edge.fromNodeId) && nodeIds.has(edge.toNodeId)),
@@ -129,9 +152,12 @@ export function TraceCanvas({
 
   useEffect(() => {
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     setSelectedEdgeId(null);
     setConnection(null);
     setDragPreview(null);
+    setSelectionBox(null);
+    selectionRef.current = null;
   }, [trace.id]);
 
   useEffect(() => {
@@ -158,9 +184,11 @@ export function TraceCanvas({
         const changed = event.shiftKey ? onRedo() : onUndo();
         if (changed) {
           setSelectedNodeId(null);
+          setSelectedNodeIds([]);
           setSelectedEdgeId(null);
           setConnection(null);
           setDragPreview(null);
+          setSelectionBox(null);
         }
         return;
       }
@@ -175,11 +203,17 @@ export function TraceCanvas({
       }
 
       if (event.key !== 'Delete') return;
-      if (!selectedNodeId && !selectedEdgeId) return;
+      if (selectedNodeIds.length === 0 && !selectedNodeId && !selectedEdgeId) return;
       event.preventDefault();
+      if (selectedNodeIds.length > 1) {
+        onDeleteNodes(selectedNodeIds);
+        clearNodeSelection();
+        setSelectedEdgeId(null);
+        return;
+      }
       if (selectedNodeId) {
         onDeleteNode(selectedNodeId);
-        setSelectedNodeId(null);
+        clearNodeSelection();
         setSelectedEdgeId(null);
         return;
       }
@@ -190,7 +224,7 @@ export function TraceCanvas({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canvasNodes, editingNodeId, isTitleEditing, onDeleteEdge, onDeleteNode, onRedo, onUndo, selectedEdgeId, selectedNodeId]);
+  }, [canvasNodes, editingNodeId, isTitleEditing, onDeleteEdge, onDeleteNode, onDeleteNodes, onRedo, onUndo, selectedEdgeId, selectedNodeId, selectedNodeIds]);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -228,7 +262,7 @@ export function TraceCanvas({
         event.preventDefault();
         void onPasteImageNode(imageFile, point.x, point.y).then((nodeId) => {
           if (nodeId) {
-            setSelectedNodeId(nodeId);
+            selectNodes([nodeId]);
             setSelectedEdgeId(null);
           }
         });
@@ -239,7 +273,7 @@ export function TraceCanvas({
       const x = snapToGrid(copiedNode.x + pasteOffset);
       const y = snapToGrid(copiedNode.y + pasteOffset);
       const nodeId = onPasteTextNode(copiedNode, x, y);
-      setSelectedNodeId(nodeId);
+      selectNodes([nodeId]);
       setSelectedEdgeId(null);
       setCopiedNode({ ...copiedNode, x, y });
     };
@@ -253,6 +287,32 @@ export function TraceCanvas({
 
   function clampScale(value: number): number {
     return Math.min(maxScale, Math.max(minScale, value));
+  }
+
+  function selectNodes(nodeIds: string[]): void {
+    setSelectedNodeIds(nodeIds);
+    setSelectedNodeId(nodeIds.length === 1 ? nodeIds[0] : null);
+    setSelectedEdgeId(null);
+  }
+
+  function clearNodeSelection(): void {
+    setSelectedNodeIds([]);
+    setSelectedNodeId(null);
+  }
+
+  function selectionRect(selection: SelectionState): NodeBox {
+    const x = Math.min(selection.startX, selection.currentX);
+    const y = Math.min(selection.startY, selection.currentY);
+    return {
+      x,
+      y,
+      width: Math.abs(selection.currentX - selection.startX),
+      height: Math.abs(selection.currentY - selection.startY)
+    };
+  }
+
+  function boxesIntersect(a: NodeBox, b: NodeBox): boolean {
+    return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y;
   }
 
   function screenPoint(clientX: number, clientY: number): { x: number; y: number } | null {
@@ -278,8 +338,9 @@ export function TraceCanvas({
   }
 
   function displayNode<T extends CanvasNode>(node: T): T {
-    if (dragPreview?.nodeId !== node.id) return node;
-    return { ...node, x: dragPreview.x, y: dragPreview.y };
+    const preview = dragPreview?.[node.id];
+    if (!preview) return node;
+    return { ...node, x: preview.x, y: preview.y };
   }
 
   function fallbackHeight(node: CanvasNode): number {
@@ -345,6 +406,184 @@ export function TraceCanvas({
     return `M ${from.x} ${from.y} C ${from.x + delta} ${from.y}, ${to.x - delta} ${to.y}, ${to.x} ${to.y}`;
   }
 
+  function drawEdgePath(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }): void {
+    const delta = Math.max(48, Math.abs(to.x - from.x) * 0.45);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.bezierCurveTo(from.x + delta, from.y, to.x - delta, to.y, to.x, to.y);
+    ctx.stroke();
+  }
+
+  function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+    const size = Math.min(radius, width / 2, height / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + size, y);
+    ctx.lineTo(x + width - size, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + size);
+    ctx.lineTo(x + width, y + height - size);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - size, y + height);
+    ctx.lineTo(x + size, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - size);
+    ctx.lineTo(x, y + size);
+    ctx.quadraticCurveTo(x, y, x + size, y);
+    ctx.closePath();
+  }
+
+  function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const lines: string[] = [];
+    for (const paragraph of (text || '新节点').split('\n')) {
+      let line = '';
+      for (const char of paragraph) {
+        const nextLine = `${line}${char}`;
+        if (line && ctx.measureText(nextLine).width > maxWidth) {
+          lines.push(line);
+          line = char;
+        } else {
+          line = nextLine;
+        }
+      }
+      lines.push(line || ' ');
+    }
+    return lines;
+  }
+
+  async function loadExportImage(src: string): Promise<HTMLImageElement | null> {
+    try {
+      const response = await fetch(src);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      return await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(image);
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(null);
+        };
+        image.src = objectUrl;
+      });
+    } catch {
+      return await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = src;
+      });
+    }
+  }
+
+  function sanitizeFileName(value: string): string {
+    return value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').replace(/\s+/g, ' ').slice(0, 80);
+  }
+
+  async function handleExportPng(): Promise<void> {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const dark = document.documentElement.classList.contains('dark');
+      const boxes = canvasNodes.map((node) => ({ node, box: nodeBox(node) }));
+      const bounds = boxes.length
+        ? boxes.reduce(
+            (next, item) => ({
+              minX: Math.min(next.minX, item.box.x),
+              minY: Math.min(next.minY, item.box.y),
+              maxX: Math.max(next.maxX, item.box.x + item.box.width),
+              maxY: Math.max(next.maxY, item.box.y + item.box.height)
+            }),
+            { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+          )
+        : { minX: -500, minY: -340, maxX: 500, maxY: 340 };
+      const originX = bounds.minX - exportPadding;
+      const originY = bounds.minY - exportPadding;
+      const width = Math.max(320, Math.ceil(bounds.maxX - bounds.minX + exportPadding * 2));
+      const height = Math.max(240, Math.ceil(bounds.maxY - bounds.minY + exportPadding * 2));
+      const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width * ratio);
+      canvas.height = Math.ceil(height * ratio);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.scale(ratio, ratio);
+      ctx.translate(-originX, -originY);
+
+      ctx.fillStyle = dark ? '#272727' : '#edf0ec';
+      ctx.fillRect(originX, originY, width, height);
+      ctx.fillStyle = dark ? 'rgba(214,214,214,0.18)' : 'rgba(100,105,98,0.24)';
+      const gridStartX = Math.floor(originX / gridSize) * gridSize;
+      const gridStartY = Math.floor(originY / gridSize) * gridSize;
+      for (let x = gridStartX; x <= originX + width; x += gridSize) {
+        for (let y = gridStartY; y <= originY + height; y += gridSize) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      const nodeMap = new Map(boxes.map((item) => [item.node.id, item.node]));
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.20)';
+      validEdges.forEach((edge) => {
+        const fromNode = nodeMap.get(edge.fromNodeId);
+        const toNode = nodeMap.get(edge.toNodeId);
+        if (!fromNode || !toNode) return;
+        const anchors = anchorBetween(fromNode, toNode);
+        drawEdgePath(ctx, anchors.from, anchors.to);
+      });
+
+      for (const { node, box } of boxes) {
+        ctx.save();
+        ctx.shadowColor = dark ? 'rgba(0,0,0,0.22)' : 'rgba(23,32,28,0.08)';
+        ctx.shadowBlur = 22;
+        ctx.shadowOffsetY = 10;
+        roundedRectPath(ctx, box.x, box.y, box.width, box.height, 8);
+        ctx.fillStyle = node.type === 'image' ? (dark ? 'rgba(48,48,48,0.96)' : 'rgba(252,252,251,0.96)') : dark ? '#333333' : '#fbfbfa';
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.strokeStyle = dark ? '#505050' : '#d3d8d1';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        if (node.type === 'text') {
+          ctx.font = '14px sans-serif';
+          ctx.fillStyle = dark ? '#f5f5f5' : '#292524';
+          ctx.textBaseline = 'top';
+          const lineHeight = 24;
+          const lines = wrapText(ctx, node.text || '新节点', box.width - 24);
+          lines.forEach((line, index) => {
+            ctx.fillText(line, box.x + 12, box.y + 12 + index * lineHeight);
+          });
+        } else {
+          const imageSrc = resolveWorkImageSrc({ id: node.id, localPath: node.imagePath, name: node.name, addedAt: node.createdAt }, libraryPath);
+          const image = await loadExportImage(imageSrc);
+          if (image) {
+            const frame = { x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12 };
+            const scale = Math.min(frame.width / image.width, frame.height / image.height);
+            const drawWidth = image.width * scale;
+            const drawHeight = image.height * scale;
+            const drawX = frame.x + (frame.width - drawWidth) / 2;
+            const drawY = frame.y + (frame.height - drawHeight) / 2;
+            roundedRectPath(ctx, drawX, drawY, drawWidth, drawHeight, 6);
+            ctx.clip();
+            ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+          }
+        }
+        ctx.restore();
+      }
+
+      const fileBase = sanitizeFileName(trace.title);
+      const fileName = fileBase ? `tracenest-trace-${fileBase}.png` : 'tracenest-trace.png';
+      const ok = await onExportPng(canvas.toDataURL('image/png'), fileName);
+      if (!ok) throw new Error('Export canceled');
+    } catch {
+      await onExportPng('', '');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function targetNodeFromPoint(clientX: number, clientY: number, fromNodeId: string): string | null {
     const target = document
       .elementsFromPoint(clientX, clientY)
@@ -393,8 +632,7 @@ export function TraceCanvas({
 
   function startNodeEditing(node: TextTraceNode, isNew = false): void {
     skipNodeBlurSaveRef.current = false;
-    setSelectedNodeId(node.id);
-    setSelectedEdgeId(null);
+    selectNodes([node.id]);
     setEditingNodeId(node.id);
     setNodeDraft(node.text);
     setEditingOriginalText(node.text);
@@ -454,38 +692,85 @@ export function TraceCanvas({
       setViewport((current) => ({ ...current, offsetX, offsetY }));
       return;
     }
+    const selection = selectionRef.current;
+    if (selection && selection.pointerId === event.pointerId) {
+      const point = canvasPoint(event.clientX, event.clientY);
+      if (!point) return;
+      event.preventDefault();
+      selection.currentX = point.x;
+      selection.currentY = point.y;
+      selection.moved =
+        selection.moved ||
+        Math.abs(selection.currentX - selection.startX) > 4 ||
+        Math.abs(selection.currentY - selection.startY) > 4;
+      setSelectionBox({ ...selection });
+      lastCanvasPointRef.current = point;
+      return;
+    }
     lastCanvasPointRef.current = canvasPoint(event.clientX, event.clientY);
   }
 
   function handleCanvasPointerDownCapture(event: PointerEvent<HTMLDivElement>): void {
-    if (!spacePressed || event.button !== 0) return;
+    if (event.button !== 0) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('button, input, textarea, select, [contenteditable="true"]')) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if (spacePressed) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      panRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        offsetX: viewport.offsetX,
+        offsetY: viewport.offsetY,
+        moved: false
+      };
+      setIsPanning(true);
+      clearNodeSelection();
+      setSelectedEdgeId(null);
+      return;
+    }
+    if (editingNodeId || isTitleEditing || connection || target?.closest('[data-trace-node="true"]')) return;
+    const point = canvasPoint(event.clientX, event.clientY);
+    if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    panRef.current = {
+    selectionRef.current = {
       pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      offsetX: viewport.offsetX,
-      offsetY: viewport.offsetY,
+      startX: point.x,
+      startY: point.y,
+      currentX: point.x,
+      currentY: point.y,
       moved: false
     };
-    setIsPanning(true);
-    setSelectedNodeId(null);
+    setSelectionBox({ ...selectionRef.current });
     setSelectedEdgeId(null);
   }
 
   function handleCanvasPointerUp(event: PointerEvent<HTMLDivElement>): void {
     const pan = panRef.current;
-    if (!pan || pan.pointerId !== event.pointerId) return;
+    if (pan && pan.pointerId === event.pointerId) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      if (pan.moved) suppressNextCanvasClickRef.current = true;
+      panRef.current = null;
+      setIsPanning(false);
+      return;
+    }
+
+    const selection = selectionRef.current;
+    if (!selection || selection.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    selectionRef.current = null;
+    setSelectionBox(null);
+    if (!selection.moved) return;
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    if (pan.moved) suppressNextCanvasClickRef.current = true;
-    panRef.current = null;
-    setIsPanning(false);
+    suppressNextCanvasClickRef.current = true;
+    const rect = selectionRect(selection);
+    const selectedIds = canvasNodes.filter((node) => boxesIntersect(rect, nodeBox(node))).map((node) => node.id);
+    selectNodes(selectedIds);
   }
 
   function handleCanvasDoubleClick(event: MouseEvent<HTMLDivElement>): void {
@@ -499,8 +784,7 @@ export function TraceCanvas({
     const x = point.x - width / 2;
     const y = point.y - 28;
     const nodeId = onCreateTextNode(x, y);
-    setSelectedNodeId(nodeId);
-    setSelectedEdgeId(null);
+    selectNodes([nodeId]);
     setEditingNodeId(nodeId);
     setNodeDraft('');
     setEditingOriginalText('');
@@ -515,7 +799,7 @@ export function TraceCanvas({
     const target = event.target as HTMLElement | null;
     if (!target || target.closest('[data-trace-node="true"]')) return;
     if (target.closest('button, input, textarea, select')) return;
-    setSelectedNodeId(null);
+    clearNodeSelection();
     setSelectedEdgeId(null);
   }
 
@@ -537,7 +821,7 @@ export function TraceCanvas({
     void onCreateImageNodes(Array.from(event.dataTransfer.files ?? []), x, y).then((ids) => {
       const lastId = ids[ids.length - 1];
       if (lastId) {
-        setSelectedNodeId(lastId);
+        selectNodes([lastId]);
         setSelectedEdgeId(null);
       }
     });
@@ -552,17 +836,22 @@ export function TraceCanvas({
     const point = canvasPoint(event.clientX, event.clientY);
     if (!point) return;
     const display = displayNode(node);
+    const shouldDragGroup = selectedNodeIdSet.has(node.id) && selectedNodeIds.length > 1;
+    const groupNodes = shouldDragGroup
+      ? canvasNodes.filter((item) => selectedNodeIdSet.has(item.id)).map((item) => displayNode(item))
+      : [display];
     dragRef.current = {
       nodeId: node.id,
       offsetX: point.x - display.x,
       offsetY: point.y - display.y,
       startX: event.clientX,
       startY: event.clientY,
-      moved: false
+      moved: false,
+      group: groupNodes.map((item) => ({ nodeId: item.id, startX: item.x, startY: item.y }))
     };
-    setSelectedNodeId(node.id);
-    setSelectedEdgeId(null);
-    setDragPreview({ nodeId: node.id, x: display.x, y: display.y });
+    if (!shouldDragGroup) selectNodes([node.id]);
+    else setSelectedEdgeId(null);
+    setDragPreview(Object.fromEntries(groupNodes.map((item) => [item.id, { x: item.x, y: item.y }])));
   }
 
   function handleNodePointerMove(event: PointerEvent<HTMLDivElement>): void {
@@ -573,7 +862,14 @@ export function TraceCanvas({
     const x = snapToGrid(point.x - drag.offsetX);
     const y = snapToGrid(point.y - drag.offsetY);
     drag.moved = drag.moved || Math.abs(event.clientX - drag.startX) > 3 || Math.abs(event.clientY - drag.startY) > 3;
-    setDragPreview({ nodeId: drag.nodeId, x, y });
+    const primary = drag.group.find((item) => item.nodeId === drag.nodeId);
+    const deltaX = primary ? x - primary.startX : 0;
+    const deltaY = primary ? y - primary.startY : 0;
+    setDragPreview(
+      Object.fromEntries(
+        drag.group.map((item) => [item.nodeId, { x: item.startX + deltaX, y: item.startY + deltaY }])
+      )
+    );
   }
 
   function handleNodePointerUp(event: PointerEvent<HTMLDivElement>): void {
@@ -584,9 +880,15 @@ export function TraceCanvas({
     dragRef.current = null;
     setDragPreview(null);
     if (!drag.moved || !point) return;
+    suppressNextNodeClickRef.current = true;
     const x = snapToGrid(point.x - drag.offsetX);
     const y = snapToGrid(point.y - drag.offsetY);
-    onMoveNode(drag.nodeId, x, y);
+    const primary = drag.group.find((item) => item.nodeId === drag.nodeId);
+    const deltaX = primary ? x - primary.startX : 0;
+    const deltaY = primary ? y - primary.startY : 0;
+    const positions = drag.group.map((item) => ({ id: item.nodeId, x: item.startX + deltaX, y: item.startY + deltaY }));
+    if (positions.length > 1) onMoveNodes(positions);
+    else onMoveNode(drag.nodeId, x, y);
   }
 
   function handleConnectorPointerDown(event: PointerEvent<HTMLButtonElement>, node: CanvasNode): void {
@@ -597,8 +899,7 @@ export function TraceCanvas({
     const point = canvasPoint(event.clientX, event.clientY);
     if (!point) return;
     const anchor = connectorAnchor(node);
-    setSelectedNodeId(node.id);
-    setSelectedEdgeId(null);
+    selectNodes([node.id]);
     setConnection({
       fromNodeId: node.id,
       startX: anchor.x,
@@ -689,6 +990,10 @@ export function TraceCanvas({
             <p className="mt-0.5 text-xs text-stone-500 dark:text-neutral-500">{canvasNodes.length} 个节点</p>
           </div>
         </div>
+        <button className="tool-button h-9 px-3" onClick={() => void handleExportPng()} disabled={exporting}>
+          <Download className="h-4 w-4" />
+          {exporting ? '导出中' : '导出 PNG'}
+        </button>
       </header>
 
       <div
@@ -734,7 +1039,7 @@ export function TraceCanvas({
                   onClick={(event) => {
                     event.stopPropagation();
                     setSelectedEdgeId(edge.id);
-                    setSelectedNodeId(null);
+                    clearNodeSelection();
                   }}
                 />
                 <path
@@ -768,10 +1073,22 @@ export function TraceCanvas({
           </div>
         )}
 
+        {selectionBox?.moved && (
+          <div
+            className="pointer-events-none absolute z-30 rounded-[6px] border border-[rgba(0,0,0,0.24)] bg-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.34)] dark:bg-[rgba(255,255,255,0.10)]"
+            style={{
+              left: selectionRect(selectionBox).x,
+              top: selectionRect(selectionBox).y,
+              width: selectionRect(selectionBox).width,
+              height: selectionRect(selectionBox).height
+            }}
+          />
+        )}
+
         {canvasNodes.map((node) => {
           const display = displayNode(node);
           const isEditing = editingNodeId === node.id && node.type === 'text';
-          const isSelected = selectedNodeId === node.id || isEditing;
+          const isSelected = selectedNodeIdSet.has(node.id) || isEditing;
           const imageSrc =
             node.type === 'image'
               ? resolveWorkImageSrc({ id: node.id, localPath: node.imagePath, name: node.name, addedAt: node.createdAt }, libraryPath)
@@ -798,8 +1115,11 @@ export function TraceCanvas({
               onPointerUp={handleNodePointerUp}
               onClick={(event) => {
                 event.stopPropagation();
-                setSelectedNodeId(node.id);
-                setSelectedEdgeId(null);
+                if (suppressNextNodeClickRef.current) {
+                  suppressNextNodeClickRef.current = false;
+                  return;
+                }
+                selectNodes([node.id]);
               }}
               onDoubleClick={(event) => {
                 event.stopPropagation();

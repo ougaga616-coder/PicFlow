@@ -819,6 +819,41 @@ export default function App(): JSX.Element {
     setToast('已删除');
   }
 
+  function moveNodesInSelectedTrace(positions: Array<{ id: string; x: number; y: number }>): void {
+    if (positions.length === 0) return;
+    const nextPositions = new Map(positions.map((position) => [position.id, position]));
+    commitSelectedTraceChange((trace) => {
+      let changed = false;
+      const timestamp = nowIso();
+      const nodes = trace.nodes.map((node) => {
+        const next = nextPositions.get(node.id);
+        if (!next || (node.x === next.x && node.y === next.y)) return node;
+        changed = true;
+        return node.type === 'text' || node.type === 'image'
+          ? { ...node, x: next.x, y: next.y, updatedAt: timestamp }
+          : { ...node, x: next.x, y: next.y };
+      });
+      return changed ? { ...trace, updatedAt: timestamp, nodes } : trace;
+    });
+  }
+
+  function deleteNodesInSelectedTrace(nodeIds: string[]): void {
+    if (nodeIds.length === 0) return;
+    const nodeIdSet = new Set(nodeIds);
+    const nextTrace = commitSelectedTraceChange((trace) => {
+      if (!trace.nodes.some((node) => nodeIdSet.has(node.id))) return trace;
+      const timestamp = nowIso();
+      return {
+        ...trace,
+        updatedAt: timestamp,
+        nodes: trace.nodes.filter((node) => !nodeIdSet.has(node.id)),
+        edges: trace.edges.filter((edge) => !nodeIdSet.has(edge.fromNodeId) && !nodeIdSet.has(edge.toNodeId))
+      };
+    });
+    if (!nextTrace) return;
+    setToast('已删除');
+  }
+
   function createEdgeInSelectedTrace(fromNodeId: string, toNodeId: string): void {
     commitSelectedTraceChange((trace) => createTraceEdge(trace, fromNodeId, toNodeId));
   }
@@ -827,6 +862,21 @@ export default function App(): JSX.Element {
     const nextTrace = commitSelectedTraceChange((trace) => (trace.edges.some((edge) => edge.id === edgeId) ? deleteTraceEdge(trace, edgeId) : trace));
     if (!nextTrace) return;
     setToast('已删除');
+  }
+
+  async function exportTracePng(dataUrl: string, fileName: string): Promise<boolean> {
+    if (!dataUrl) {
+      setToast('导出失败');
+      return false;
+    }
+    try {
+      const ok = await picflowApi.exportShareCardPng(dataUrl, fileName);
+      setToast(ok ? '已导出 PNG' : '导出失败');
+      return ok;
+    } catch {
+      setToast('导出失败');
+      return false;
+    }
   }
 
   function updateCase(id: string, patch: Partial<PicFlowCase>): void {
@@ -1574,11 +1624,14 @@ export default function App(): JSX.Element {
               onPasteImageNode={pasteImageNodeInSelectedTrace}
               onUpdateTextNode={updateTextNodeInSelectedTrace}
               onMoveNode={moveNodeInSelectedTrace}
+              onMoveNodes={moveNodesInSelectedTrace}
               onDeleteNode={deleteNodeInSelectedTrace}
+              onDeleteNodes={deleteNodesInSelectedTrace}
               onCreateEdge={createEdgeInSelectedTrace}
               onDeleteEdge={deleteEdgeInSelectedTrace}
               onUndo={undoSelectedTrace}
               onRedo={redoSelectedTrace}
+              onExportPng={exportTracePng}
               libraryPath={libraryState.currentLibrary?.path}
             />
           ) : (
