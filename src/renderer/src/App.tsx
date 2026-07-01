@@ -1801,7 +1801,7 @@ function BrandHeader(): JSX.Element {
         <div className="brand-logo">TN</div>
         <div className="brand-name-block">
           <div className="brand-title">图迹</div>
-          <div className="brand-en">TRACENEST</div>
+          <div className="brand-en">TraceNest</div>
         </div>
       </div>
       <div className="brand-description">AIGC 视觉灵感库</div>
