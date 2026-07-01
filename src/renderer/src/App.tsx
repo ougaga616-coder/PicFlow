@@ -2196,9 +2196,9 @@ function DetailPanel({
               {'\u70b9\u51fb\u3001\u62d6\u62fd\u6216 Ctrl+V \u6dfb\u52a0\u57ab\u56fe'}
             </button>
             {(item.referenceImages ?? []).length > 0 && (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2.5">
                 {(item.referenceImages ?? []).map((image) => (
-                  <div key={image.id} className="group relative aspect-square overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
+                  <div key={image.id} className="group relative aspect-square min-w-0 overflow-hidden rounded-[12px] border border-[#d8ddd7] bg-white dark:border-[#494949] dark:bg-[#383838]">
                     <img className="h-full w-full object-cover" src={getImageSrc(image)} alt={image.name ?? '垫图'} />
                     <div className="absolute inset-x-1 bottom-1 flex justify-end gap-1 opacity-0 transition group-hover:opacity-100">
                       <button className="icon-button h-7 w-7" onClick={() => onCopyGuideImage(image)} aria-label="复制垫图" title="复制垫图">
