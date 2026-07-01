@@ -24,7 +24,7 @@ import { Toast } from './components/Toast';
 import { TraceCanvas } from './features/traces/TraceCanvas';
 import { TraceList } from './features/traces/TraceList';
 import { fallbackTraceApi } from './features/traces/traceStorage';
-import { createImageNode, createTextNode, createTrace, createTraceEdge, deleteTraceEdge, deleteTraceNode, emptyTraceData, moveTraceNode, nextDefaultTraceTitle, renameTrace, updateTraceTextNode, type CreativeTrace, type ImageTraceNode, type TextTraceNode, type TraceData } from './features/traces/traceTypes';
+import { createImageNode, createTextNode, createTrace, createTraceEdge, createWorkNode, deleteTraceEdge, deleteTraceNode, emptyTraceData, moveTraceNode, nextDefaultTraceTitle, renameTrace, updateTraceTextNode, type CreativeTrace, type ImageTraceNode, type TextTraceNode, type TraceData } from './features/traces/traceTypes';
 import { useSmartClipboard } from './hooks/useSmartClipboard';
 import type { PicFlowCase, PicFlowClipboardApi, PicFlowCollection, PicFlowData, PicFlowImage, PicFlowLibraryApi, PicFlowLibraryState } from './types';
 import { resolveWorkImageSrc } from './utils/imageDisplay';
@@ -749,6 +749,13 @@ export default function App(): JSX.Element {
     return node.id;
   }
 
+  function createWorkNodeInSelectedTrace(workId: string, x: number, y: number): string {
+    const node = createWorkNode(x, y, workId);
+    commitSelectedTraceChange((trace) => ({ ...trace, updatedAt: nowIso(), nodes: [...trace.nodes, node] }));
+    setToast('已插入作品');
+    return node.id;
+  }
+
   async function createImageNodesInSelectedTrace(files: File[], x: number, y: number): Promise<string[]> {
     if (!selectedTraceId) return [];
     const imageFiles = files.filter(isImageFile);
@@ -813,6 +820,23 @@ export default function App(): JSX.Element {
     });
   }
 
+  function resizeTraceNodeInSelectedTrace(nodeId: string, width: number, height: number): void {
+    commitSelectedTraceChange((trace) => {
+      const node = trace.nodes.find((item) => item.id === nodeId);
+      if (!node || (node.type !== 'image' && node.type !== 'work') || (node.width === width && node.height === height)) return trace;
+      const timestamp = nowIso();
+      return {
+        ...trace,
+        updatedAt: timestamp,
+        nodes: trace.nodes.map((item) =>
+          item.id === nodeId && (item.type === 'image' || item.type === 'work')
+            ? { ...item, width, height, updatedAt: timestamp }
+            : item
+        )
+      };
+    });
+  }
+
   function deleteNodeInSelectedTrace(nodeId: string): void {
     const nextTrace = commitSelectedTraceChange((trace) => (trace.nodes.some((node) => node.id === nodeId) ? deleteTraceNode(trace, nodeId) : trace));
     if (!nextTrace) return;
@@ -829,7 +853,7 @@ export default function App(): JSX.Element {
         const next = nextPositions.get(node.id);
         if (!next || (node.x === next.x && node.y === next.y)) return node;
         changed = true;
-        return node.type === 'text' || node.type === 'image'
+        return node.type === 'text' || node.type === 'image' || node.type === 'work'
           ? { ...node, x: next.x, y: next.y, updatedAt: timestamp }
           : { ...node, x: next.x, y: next.y };
       });
@@ -871,7 +895,7 @@ export default function App(): JSX.Element {
     }
     try {
       const ok = await picflowApi.exportShareCardPng(dataUrl, fileName);
-      setToast(ok ? '已导出 PNG' : '导出失败');
+      setToast(ok ? '已导出为 PNG' : '导出失败');
       return ok;
     } catch {
       setToast('导出失败');
@@ -1616,15 +1640,18 @@ export default function App(): JSX.Element {
           selectedTrace ? (
             <TraceCanvas
               trace={selectedTrace}
+              works={data.cases}
               onBack={backToTraceList}
               onRename={renameSelectedTrace}
               onCreateTextNode={createTextNodeInSelectedTrace}
               onPasteTextNode={pasteTextNodeInSelectedTrace}
               onCreateImageNodes={createImageNodesInSelectedTrace}
               onPasteImageNode={pasteImageNodeInSelectedTrace}
+              onCreateWorkNode={createWorkNodeInSelectedTrace}
               onUpdateTextNode={updateTextNodeInSelectedTrace}
               onMoveNode={moveNodeInSelectedTrace}
               onMoveNodes={moveNodesInSelectedTrace}
+              onResizeNode={resizeTraceNodeInSelectedTrace}
               onDeleteNode={deleteNodeInSelectedTrace}
               onDeleteNodes={deleteNodesInSelectedTrace}
               onCreateEdge={createEdgeInSelectedTrace}

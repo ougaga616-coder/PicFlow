@@ -58,7 +58,7 @@ export type PicFlowData = {
 
 export type PicFlowBaseTraceNode = {
   id: string;
-  type: 'center' | 'text' | 'image';
+  type: 'center' | 'text' | 'image' | 'work';
   x: number;
   y: number;
   width: number;
@@ -87,7 +87,15 @@ export type PicFlowImageTraceNode = PicFlowBaseTraceNode & {
   updatedAt: string;
 };
 
-export type PicFlowTraceNode = PicFlowCenterTraceNode | PicFlowTextTraceNode | PicFlowImageTraceNode;
+export type PicFlowWorkTraceNode = PicFlowBaseTraceNode & {
+  type: 'work';
+  height: number;
+  workId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PicFlowTraceNode = PicFlowCenterTraceNode | PicFlowTextTraceNode | PicFlowImageTraceNode | PicFlowWorkTraceNode;
 
 export type PicFlowTraceImageAsset = {
   imagePath: string;

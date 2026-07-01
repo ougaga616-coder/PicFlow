@@ -1,4 +1,4 @@
-import { Clock, GitBranch, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Clock, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { CreativeTrace } from './traceTypes';
 
 type TraceListProps = {
@@ -71,7 +71,6 @@ export function TraceList({
         <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
           {traces.map((trace) => {
             const isEditing = editingTraceId === trace.id;
-            const nodeCount = trace.nodes.filter((node) => node.type === 'text').length;
             return (
               <article
                 key={trace.id}
@@ -117,10 +116,6 @@ export function TraceList({
                     更新于 {formatTraceTime(trace.updatedAt)}
                   </span>
                   <span className="mt-1 text-xs text-stone-400 dark:text-neutral-500">创建于 {formatTraceTime(trace.createdAt)}</span>
-                  <span className="mt-auto inline-flex items-center gap-1.5 pt-4 text-xs font-medium text-stone-500 dark:text-neutral-400">
-                    <MoreHorizontal className="h-3.5 w-3.5" />
-                    {nodeCount} 个节点
-                  </span>
                 </button>
               </article>
             );

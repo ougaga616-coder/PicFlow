@@ -1,4 +1,4 @@
-export type TraceNodeType = 'center' | 'text' | 'image';
+export type TraceNodeType = 'center' | 'text' | 'image' | 'work';
 
 export type BaseTraceNode = {
   id: string;
@@ -31,7 +31,15 @@ export type ImageTraceNode = BaseTraceNode & {
   updatedAt: string;
 };
 
-export type TraceNode = CenterTraceNode | TextTraceNode | ImageTraceNode;
+export type WorkTraceNode = BaseTraceNode & {
+  type: 'work';
+  height: number;
+  workId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TraceNode = CenterTraceNode | TextTraceNode | ImageTraceNode | WorkTraceNode;
 
 export type TraceEdge = {
   id: string;
@@ -97,6 +105,21 @@ export function createImageNode(x: number, y: number, imagePath: string, name?: 
   };
 }
 
+export function createWorkNode(x: number, y: number, workId: string): WorkTraceNode {
+  const timestamp = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    type: 'work',
+    x,
+    y,
+    width: 280,
+    height: 200,
+    workId,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
 export function nextDefaultTraceTitle(traces: CreativeTrace[]): string {
   const baseTitle = '未命名复迹';
   const existingTitles = new Set(traces.map((trace) => trace.title.trim()));
@@ -152,7 +175,7 @@ export function moveTraceNode(trace: CreativeTrace, nodeId: string, x: number, y
     updatedAt: timestamp,
     nodes: trace.nodes.map((node) =>
       node.id === nodeId
-        ? node.type === 'text' || node.type === 'image'
+        ? node.type === 'text' || node.type === 'image' || node.type === 'work'
           ? { ...node, x, y, updatedAt: timestamp }
           : { ...node, x, y }
         : node
