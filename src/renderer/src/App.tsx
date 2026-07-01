@@ -1822,10 +1822,10 @@ function ClipboardImageConfirm({
   onDismiss: () => void;
 }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa]/86 px-3 py-2.5 shadow-[0_10px_28px_rgba(23,32,28,0.08)] backdrop-blur dark:border-[#424242] dark:bg-[#303030]/92 dark:shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#d1d7d0] bg-[#fbfbfa]/96 px-3 py-2.5 shadow-[0_16px_38px_rgba(23,32,28,0.16)] backdrop-blur-md dark:border-[#4a4a4a] dark:bg-[#303030]/98 dark:shadow-[0_18px_42px_rgba(0,0,0,0.34)]">
       <div>
-        <div className="text-xs font-semibold text-stone-700 dark:text-neutral-100">检测到剪贴板图片</div>
-        <div className="mt-0.5 text-xs text-stone-500 dark:text-neutral-400">选择如何使用这张图片</div>
+        <div className="text-xs font-semibold text-stone-800 dark:text-neutral-50">检测到剪贴板图片</div>
+        <div className="mt-0.5 text-xs text-stone-600 dark:text-neutral-300">选择如何使用这张图片</div>
       </div>
       <div className="flex items-center gap-2">
         <button className="h-8 rounded-[9px] bg-[#2f2f2f] px-3 text-xs font-medium text-white transition hover:bg-[#222] dark:bg-[#dedede] dark:text-[#222] dark:hover:bg-[#f0f0f0]" onClick={onCreateWork}>
