@@ -1,4 +1,4 @@
-import { Clock, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Clock, GitBranch, HelpCircle, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { CreativeTrace } from './traceTypes';
 
 type TraceListProps = {
@@ -40,8 +40,31 @@ export function TraceList({
     <section className="flex h-full min-h-0 flex-col overflow-y-auto bg-[#e6eae5] px-7 py-6 dark:bg-[#252525]">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-[-0.01em] text-stone-800 dark:text-neutral-100">创作复迹</h2>
-          <p className="mt-1 text-sm text-stone-500 dark:text-neutral-400">用节点画布复盘你的 AI 视觉创作过程</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold tracking-[-0.01em] text-stone-800 dark:text-neutral-100">创作复迹</h2>
+            <div className="group relative">
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#dce2dc] hover:text-stone-600 focus:bg-[#dce2dc] focus:text-stone-600 focus:outline-none dark:text-neutral-500 dark:hover:bg-[#393939] dark:hover:text-neutral-200 dark:focus:bg-[#393939] dark:focus:text-neutral-200"
+                aria-label="查看创作复迹操作方法"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </button>
+              <div className="pointer-events-none absolute left-0 top-8 z-30 w-[300px] rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa] p-3 text-left text-xs leading-6 text-stone-600 opacity-0 shadow-[0_18px_42px_rgba(23,32,28,0.13)] transition group-hover:opacity-100 group-focus-within:opacity-100 dark:border-[#464646] dark:bg-[#303030] dark:text-neutral-300 dark:shadow-[0_18px_42px_rgba(0,0,0,0.28)]">
+                <p>双击空白处：新建文字节点</p>
+                <p>拖入图片：添加图片节点</p>
+                <p>插入作品：添加作品节点</p>
+                <p>拖动节点右侧圆点：创建连接线</p>
+                <p>框选拖拽：多选并移动节点</p>
+                <p>Ctrl+Z：撤回</p>
+                <p>Ctrl+Shift+Z：恢复</p>
+                <p>Ctrl+滚轮：缩放画布</p>
+                <p>空格键+按鼠标左键拖拽：移动画布</p>
+                <p>导出：导出当前复迹为 PNG</p>
+              </div>
+            </div>
+          </div>
+          <p className="mt-1 text-sm text-stone-500 dark:text-neutral-400">用节点画布整理生成思路，复盘你的 AI 视觉创作过程</p>
         </div>
         {traces.length > 0 && (
           <button className="primary-button" onClick={onCreateTrace}>
@@ -58,7 +81,7 @@ export function TraceList({
               <GitBranch className="h-7 w-7" />
             </div>
             <h3 className="text-lg font-semibold tracking-[-0.01em]">还没有创作复迹</h3>
-            <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-neutral-400">新建一张复迹图，记录你的 AI 创作路径</p>
+            <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-neutral-400">新建一张复迹图，记录并复盘你的 AI 视觉生成过程</p>
             <div className="mt-5 flex justify-center">
               <button className="primary-button" onClick={onCreateTrace}>
                 <Plus className="h-4 w-4" />

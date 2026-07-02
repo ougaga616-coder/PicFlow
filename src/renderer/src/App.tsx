@@ -5,6 +5,7 @@ import {
   Folder,
   GitBranch,
   Heart,
+  HelpCircle,
   ImagePlus,
   Inbox,
   Link,
@@ -285,6 +286,7 @@ export default function App(): JSX.Element {
   const [libraryRefreshing, setLibraryRefreshing] = useState(false);
   const [cutWorkId, setCutWorkId] = useState<string | null>(null);
   const [postImportCaseId, setPostImportCaseId] = useState<string | null>(null);
+  const [clipboardImportDraft, setClipboardImportDraft] = useState<PicFlowCase | null>(null);
   const [shareCardCaseId, setShareCardCaseId] = useState<string | null>(null);
   const [clipboardImageRequest, setClipboardImageRequest] = useState<ClipboardImageRequest | null>(null);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -357,7 +359,7 @@ export default function App(): JSX.Element {
       setClipboardImageRequest(null);
       return;
     }
-    if (confirmState || postImportCaseId || shareCardCaseId || libraryMenuOpen || cutWorkId) return;
+    if (confirmState || postImportCaseId || clipboardImportDraft || shareCardCaseId || libraryMenuOpen || cutWorkId) return;
 
     let timer = 0;
     let disposed = false;
@@ -403,7 +405,7 @@ export default function App(): JSX.Element {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       removeAppFocusListener?.();
     };
-  }, [activeView, confirmState, cutWorkId, libraryMenuOpen, libraryState.ready, loaded, postImportCaseId, shareCardCaseId]);
+  }, [activeView, clipboardImportDraft, confirmState, cutWorkId, libraryMenuOpen, libraryState.ready, loaded, postImportCaseId, shareCardCaseId]);
 
   useEffect(() => {
     const onPaste = async (event: globalThis.ClipboardEvent) => {
@@ -411,7 +413,7 @@ export default function App(): JSX.Element {
       if (activeView === 'traces') return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('[data-guide-dropzone="true"]')) return;
-      if (postImportCaseId) return;
+      if (postImportCaseId || clipboardImportDraft) return;
       if (cutWorkId) {
         event.preventDefault();
         pasteCutWorkToCurrentCollection();
@@ -433,13 +435,13 @@ export default function App(): JSX.Element {
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [activeView, cutWorkId, data.cases, data.collections, libraryState.ready, postImportCaseId]);
+  }, [activeView, clipboardImportDraft, cutWorkId, data.cases, data.collections, libraryState.ready, postImportCaseId]);
 
   const selectedCase = data.cases.find((item) => item.id === selectedId) ?? null;
   const smartClipboard = useSmartClipboard({
     enabled: libraryState.ready,
     selectedWork: selectedCase,
-    modalOpen: Boolean(confirmState || postImportCaseId || shareCardCaseId || libraryMenuOpen || clipboardImageRequest),
+    modalOpen: Boolean(confirmState || postImportCaseId || clipboardImportDraft || shareCardCaseId || libraryMenuOpen || clipboardImageRequest),
     movingWork: Boolean(cutWorkId),
     clipboardApi: picflowClipboard,
     onReadError: () => setToast('\u65e0\u6cd5\u8bfb\u53d6\u526a\u8d34\u677f')
@@ -448,7 +450,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTextEditingTarget(event.target)) return;
-      if (postImportCaseId) return;
+      if (postImportCaseId || clipboardImportDraft) return;
       if (event.ctrlKey && event.key.toLowerCase() === 'x') {
         event.preventDefault();
         if (!selectedCase) {
@@ -465,7 +467,7 @@ export default function App(): JSX.Element {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [postImportCaseId, selectedCase]);
+  }, [clipboardImportDraft, postImportCaseId, selectedCase]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -955,8 +957,7 @@ export default function App(): JSX.Element {
     if (!request || !ensureLibraryReady()) return;
     try {
       const image = await picflowApi.saveDataUrlImage(request.dataUrl, 'clipboard-image.png');
-      appendWork(createCase({ images: [image], captureMethod: 'clipboard-paste' }), { openPostImportModal: true });
-      setToast('已导入图片');
+      setClipboardImportDraft(createCase({ images: [image], captureMethod: 'clipboard-paste' }));
     } catch {
       setToast('图片保存失败');
     }
@@ -1230,9 +1231,80 @@ export default function App(): JSX.Element {
     }
   }
 
+  function saveClipboardImportDraft(payload: PostImportInfoPayload): void {
+    if (!clipboardImportDraft) return;
+    appendWork({
+      ...clipboardImportDraft,
+      prompt: payload.prompt,
+      modelTags: payload.modelTags,
+      collectionId: payload.collectionId,
+      status: 'confirmed',
+      updatedAt: nowIso()
+    });
+    setClipboardImportDraft(null);
+    setToast('\u5df2\u4fdd\u5b58\u4f5c\u54c1\u4fe1\u606f');
+  }
+
   function skipPostImportInfo(): void {
     setPostImportCaseId(null);
     setToast('\u5df2\u8df3\u8fc7\uff0c\u53ef\u7a0d\u540e\u6574\u7406');
+  }
+
+  function skipClipboardImportDraft(): void {
+    if (!clipboardImportDraft) return;
+    appendWork(clipboardImportDraft);
+    setClipboardImportDraft(null);
+    setToast('\u5df2\u8df3\u8fc7\uff0c\u53ef\u7a0d\u540e\u6574\u7406');
+  }
+
+  async function addGuideImagesToClipboardDraft(): Promise<void> {
+    if (!clipboardImportDraft) return;
+    if (!ensureLibraryReady()) return;
+    try {
+      const images = await picflowApi.selectImages('reference');
+      if (!images.length) return;
+      setClipboardImportDraft((current) =>
+        current
+          ? { ...current, referenceImages: [...(current.referenceImages ?? []), ...images], updatedAt: nowIso() }
+          : current
+      );
+      setToast('\u5df2\u6dfb\u52a0\u57ab\u56fe');
+    } catch {
+      setToast('\u57ab\u56fe\u6dfb\u52a0\u5931\u8d25');
+    }
+  }
+
+  async function handleClipboardDraftGuidePaste(event: ReactClipboardEvent<HTMLElement>): Promise<void> {
+    event.stopPropagation();
+    const imageFile = Array.from(event.clipboardData.files ?? []).find((file) => file.type.startsWith('image/'));
+    if (!imageFile || !clipboardImportDraft) return;
+    if (!ensureLibraryReady()) return;
+    event.preventDefault();
+    try {
+      const dataUrl = await fileToDataUrl(imageFile);
+      const image = await picflowApi.saveDataUrlImage(dataUrl, imageFile.name || 'guide-image.png', 'reference');
+      setClipboardImportDraft((current) =>
+        current
+          ? { ...current, referenceImages: [...(current.referenceImages ?? []), image], updatedAt: nowIso() }
+          : current
+      );
+      void markCurrentClipboardImageHandled();
+      setToast('\u5df2\u6dfb\u52a0\u57ab\u56fe');
+    } catch {
+      setToast('\u56fe\u7247\u4fdd\u5b58\u5931\u8d25');
+    }
+  }
+
+  function removeClipboardDraftGuideImage(_caseId: string, imageId: string): void {
+    setClipboardImportDraft((current) =>
+      current
+        ? {
+            ...current,
+            referenceImages: (current.referenceImages ?? []).filter((image) => image.id !== imageId),
+            updatedAt: nowIso()
+          }
+        : current
+    );
   }
 
   function copyText(value: string | undefined, label: string): void {
@@ -1856,6 +1928,21 @@ export default function App(): JSX.Element {
         />
       )}
 
+      {clipboardImportDraft && (
+        <PostImportInfoModal
+          item={clipboardImportDraft}
+          collections={data.collections}
+          modelPresets={modelPresets}
+          coverSrc={getImageDisplaySrc(coverImage(clipboardImportDraft))}
+          getImageSrc={getImageDisplaySrc}
+          onSkip={skipClipboardImportDraft}
+          onSave={saveClipboardImportDraft}
+          onAddGuideImages={addGuideImagesToClipboardDraft}
+          onGuidePaste={handleClipboardDraftGuidePaste}
+          onRemoveGuideImage={removeClipboardDraftGuideImage}
+        />
+      )}
+
       {shareCardCase && (
         <ShareCardModal
           item={shareCardCase}
@@ -1912,7 +1999,7 @@ function ClipboardImageConfirm({
           新建作品
         </button>
         {hasSelectedWork && (
-          <button className="h-8 rounded-[9px] border border-black/10 bg-white/70 px-3 text-xs font-medium text-stone-700 transition hover:bg-white dark:border-white/10 dark:bg-white/8 dark:text-neutral-200 dark:hover:bg-white/12" onClick={onAddGuide}>
+          <button className="h-8 rounded-[9px] border border-black/10 bg-white/70 px-3 text-xs font-medium text-stone-700 transition hover:bg-white dark:border-white/18 dark:bg-[#444] dark:text-neutral-50 dark:hover:bg-[#505050]" onClick={onAddGuide}>
             添加为垫图
           </button>
         )}
@@ -2067,7 +2154,7 @@ function CaseCard({
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-[#eef0ed] dark:bg-[#383838]">
           {cover ? (
-            <img className="h-full w-full object-cover" src={getImageSrc(cover)} alt={displayTitle(item)} loading="lazy" />
+            <CardCoverImage src={getImageSrc(cover)} alt={displayTitle(item)} />
           ) : (
             <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500">
               <ImagePlus className="h-9 w-9" />
@@ -2075,10 +2162,9 @@ function CaseCard({
           )}
         </div>
       </button>
-      <div className="card-image-overlay" />
       <div className="card-actions">
         <IconButton active={item.favorite} label={'\u6536\u85cf'} onClick={onFavorite}>
-          <Heart className="h-4 w-4" />
+          <Heart className="h-4 w-4" fill={item.favorite ? 'currentColor' : 'none'} />
         </IconButton>
         <IconButton label={'\u590d\u5236\u56fe\u7247'} onClick={onCopy}>
           <Copy className="h-4 w-4" />
@@ -2124,13 +2210,12 @@ function PendingCard({
     >
       <button className="block h-full w-full text-left" onClick={onSelect}>
         <div className="relative h-full bg-stone-100 dark:bg-neutral-800">
-          {cover ? <img className="h-full w-full object-cover" src={getImageSrc(cover)} alt={displayTitle(item)} loading="lazy" /> : <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500"><ImagePlus className="h-9 w-9" /></div>}
+          {cover ? <CardCoverImage src={getImageSrc(cover)} alt={displayTitle(item)} /> : <div className="flex h-full items-center justify-center text-stone-400 dark:text-neutral-500"><ImagePlus className="h-9 w-9" /></div>}
         </div>
       </button>
-      <div className="card-image-overlay" />
       <div className="card-actions">
         <IconButton active={item.favorite} label={'\u6536\u85cf'} onClick={onFavorite}>
-          <Heart className="h-4 w-4" />
+          <Heart className="h-4 w-4" fill={item.favorite ? 'currentColor' : 'none'} />
         </IconButton>
         <IconButton label={'\u590d\u5236\u56fe\u7247'} onClick={onCopy}>
           <Copy className="h-4 w-4" />
@@ -2142,6 +2227,26 @@ function PendingCard({
         </IconButton>
       </div>
     </article>
+  );
+}
+
+function CardCoverImage({ src, alt }: { src: string; alt: string }): JSX.Element {
+  const [orientation, setOrientation] = useState<'landscape' | 'portraitOrSquare' | null>(null);
+  const isLandscape = orientation === 'landscape';
+
+  return (
+    <div className={`relative h-full w-full overflow-hidden ${isLandscape ? 'flex items-center justify-center bg-[#e4eae5] dark:bg-[#343434]' : 'bg-[#eef0ed] dark:bg-[#383838]'}`}>
+      <img
+        className={isLandscape ? 'h-full w-full object-contain p-2' : 'h-full w-full object-cover object-top'}
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onLoad={(event) => {
+          const image = event.currentTarget;
+          setOrientation(image.naturalWidth > image.naturalHeight ? 'landscape' : 'portraitOrSquare');
+        }}
+      />
+    </div>
   );
 }
 
@@ -2225,7 +2330,7 @@ function DetailPanel({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-4 pb-8 pt-4">
-        <section className="rounded-[16px] bg-[#eef1ec] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[#292929]">
+        <section className="rounded-[16px] bg-[#eef1ec] p-3 dark:bg-[#292929]">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold text-stone-600 dark:text-neutral-400">主图</span>
             <div className="flex items-center gap-1">
@@ -2235,7 +2340,7 @@ function DetailPanel({
             </div>
           </div>
           <div
-            className="group relative h-[330px] overflow-hidden rounded-[14px] bg-[#e3e8e2] dark:bg-[#383838]"
+            className="group relative h-[330px] overflow-hidden rounded-[14px] bg-[#e4eae5] dark:bg-[#343434]"
             onDragOver={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2273,7 +2378,7 @@ function DetailPanel({
             {(item.referenceImages ?? []).length === 0 && (
               <button
                 type="button"
-                className="flex min-h-14 w-full items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 transition hover:border-[#bfc9bd] hover:bg-white/55 hover:text-stone-500 dark:border-[#494949] dark:bg-[#333]/45 dark:text-neutral-500 dark:hover:border-[#5c5c5c] dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-300"
+                className="flex min-h-14 w-full items-center justify-center rounded-[12px] border border-dashed border-[#d7ddd6] bg-[#fbfbfa]/35 px-3 text-center text-xs text-stone-400 transition hover:border-[#bfc9bd] hover:bg-white/55 hover:text-stone-500 dark:border-[#494949] dark:bg-[#333333] dark:text-neutral-500 dark:hover:border-[#5c5c5c] dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-300"
                 onClick={onAddGuideImages}
               >
                 {'\u70b9\u51fb\u3001\u62d6\u62fd\u6216 Ctrl+V \u6dfb\u52a0\u57ab\u56fe'}
@@ -2409,10 +2514,26 @@ function DetailPanel({
         </section>
       </div>
       <div className="border-t border-[#dde2dc] bg-[#fbfbf8]/95 p-4 dark:border-[#3b3b3b] dark:bg-[#303030]/95">
-          <button className="tool-button mb-2 w-full justify-center" onClick={() => onOpenShareCard(item)}>
+          <div className="mb-2 flex items-center gap-2">
+          <button className="share-card-primary-button min-w-0 flex-1 justify-center" onClick={() => onOpenShareCard(item)}>
             生成分享卡
           </button>
-          <button className="primary-button mb-2 w-full" onClick={() => onToggleOrganized(item.id)}>
+          <div className="group relative shrink-0">
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-stone-400 transition hover:bg-[#ecefeb] hover:text-stone-600 focus:bg-[#ecefeb] focus:text-stone-600 focus:outline-none dark:text-neutral-500 dark:hover:bg-[#3a3a3a] dark:hover:text-neutral-200 dark:focus:bg-[#3a3a3a] dark:focus:text-neutral-200"
+              aria-label="查看分享卡说明"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+            <div className="pointer-events-none absolute bottom-11 right-0 z-30 w-[280px] rounded-[12px] border border-[#d7ddd6] bg-[#fbfbfa] p-3 text-left text-xs leading-6 text-stone-600 opacity-0 shadow-[0_18px_42px_rgba(23,32,28,0.13)] transition group-hover:opacity-100 group-focus-within:opacity-100 dark:border-[#464646] dark:bg-[#303030] dark:text-neutral-300 dark:shadow-[0_18px_42px_rgba(0,0,0,0.28)]">
+              <p>分享卡会把当前作品的主图、垫图、Prompt 和模型信息整理成一张图片。</p>
+              <p className="mt-2">适合用于复盘、分享 AI 生成过程，或整理作品集素材。</p>
+              <p className="mt-2">你可以复制为图片，也可以导出为 PNG。</p>
+            </div>
+          </div>
+        </div>
+          <button className="organize-secondary-button mb-2 w-full" onClick={() => onToggleOrganized(item.id)}>
             <Check className="h-4 w-4" />
             {item.status === 'pending' ? '\u6574\u7406\u5b8c\u6210' : '\u6807\u8bb0\u4e3a\u5f85\u6574\u7406'}
           </button>

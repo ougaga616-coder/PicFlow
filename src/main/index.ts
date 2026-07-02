@@ -429,7 +429,13 @@ function getCurrentLibraryPath(): string | null {
   const config = readAppConfig();
   if (validLibraryPath(config.currentLibraryPath)) return config.currentLibraryPath;
   const legacy = ensureLegacyLibraryIfNeeded();
-  return legacy?.path ?? null;
+  if (legacy) return legacy.path;
+  if (!config.currentLibraryPath) {
+    const summary = ensureLibraryStructure(defaultLibraryPath(), '\u9ed8\u8ba4\u8d44\u6e90\u5e93');
+    updateRecentLibrary(summary);
+    return summary.path;
+  }
+  return null;
 }
 
 function getLibraryState(): PicFlowLibraryState {
